@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gravity Sandbox</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+background: #000;
+overflow: hidden;
+cursor: crosshair;
+font-family: 'Segoe UI', sans-serif;
+}
+canvas { display: block; }
+#ui {
+position: fixed;
+top: 16px;
+left: 16px;
+color: rgba(255,255,255,0.6);
+font-size: 13px;
+pointer-events: none;
+line-height: 1.7;
+text-shadow: 0 0 8px rgba(0,0,0,0.9);
+z-index: 10;
+}
+#ui span { color: rgba(255,255,255,0.9); font-weight: 600; }
+#controls {
+position: fixed;
+bottom: 16px;
+left: 50%;
+transform: translateX(-50%);
+display: flex;
+gap: 12px;
+z-index: 10;
+}
+#controls button {
+background: rgba(255,255,255,0.08);
+border: 1px solid rgba(255,255,255,0.15);
+color: rgba(255,255,255,0.7);
+padding: 8px 18px;
+border-radius: 20px;
+cursor: pointer;
+font-size: 13px;
+transition: all 0.3s;
+backdrop-filter: blur(10px);
+}
+#controls button:hover {
+background: rgba(255,255,255,0.15);
+color: #fff;
+}
+#controls button.active {
+background: rgba(100,180,255,0.2);
+border-color: rgba(100,180,255,0.4);
+color: #7cc0ff;
+}
+</style>
+</head>
+<body>
+<div id="ui">
+<span id="stats">Particles: 0</span><br>
+Attractors: <span id="attCount">0</span><br>
+<small>Click to add attractor · R to reset · Scroll to resize attractor</small>
+</div>
+<div id="controls">
+<button id="btnTrails" class="active">Trails</button>
+<button id="btnColor">Rainbow</button>
+<button id="btnTurbulence">Turbulence</button>
+<button id="btnReset">Reset</button>
+</div>
+<canvas id="canvas"></canvas>
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+let W, H;
+function resize() {
+W = canvas.width = window.innerWidth;
+H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// --- Settings ---
+const PARTICLE_COUNT = 600;
+const TRAIL_ALPHA = 0.04;
+let showTrails = true;
+let colorMode = 'rainbow'; // 'rainbow', 'thermal', 'velocity'
+let turbulence = true;
+const GRAVITY_STRENGTH = 800;
+const PARTICLE_MASS = 0.3;
+const DAMPING = 0.998;
+const ATTRACTOR_RADIUS = 30;
+let attractorSize = ATTRACTOR_RADIUS;
+
+// --- Particles ---
+class Particle {
+constructor() {
+this.reset();
+}
+reset() {
+const angle = Math.random() * Math.PI * 2;
+const dist = 100 + Math.random() * Math.min(W, H) * 0.35;
+this.x = W / 2 + Math.cos(angle) * dist;
+this.y = H / 2 + Math.sin(angle) * dist;
+this.vx = (Math.random() - 0.5) * 80;
+this.vy = (Math.random() - 0.5) * 80;
+this.mass = 0.5 + Math.random() * 1.5;
+this.radius = 1.2 + Math.random() * 2;
+this.hue = Math.random() * 360;
+this.life = 1;
+this.fadeSpeed = 0.0002 + Math.random() * 0.0003;
+}
+}
+
+// --- Attractors ---
+class Attractor {
+constructor(x, y) {
+this.x = x;
+this.y = y;
+this.strength = 3000;
+this.radius = attractorSize;
+this.pulsePhase = Math.random() * Math.PI * 2;
+this.hue = Math.random() * 360;
+this.lifetime = 0;
+this.maxLife = 30 + Math.random() * 30; // seconds
+this.fading = false;
+}
+update(dt) {
+this.lifetime += dt;
+if (this.lifetime > this.maxLife) {
+this.fading = true;
+}
+if (this.fading) {
+this.strength *= 0.995;
+if (this.strength < 50) return false;
+}
+return true;
+}
+}
+
+// --- Init ---
+const particles = [];
+const attractors = [];
+for (let i = 0; i < PARTICLE_COUNT; i++) {
+particles.push(new Particle());
+}
+
+// --- Input ---
+let mouseX = W / 2, mouseY = H / 2;
+let mouseDown = false;
+let attractorsAdding = false;
+
+canvas.addEventListener('mousedown', (e) => {
+mouseDown = true;
+attractorsAdding = true;
+const a = new Attractor(e.clientX, e.clientY);
+attractors.push(a);
+});
+canvas.addEventListener('mouseup', () => { mouseDown = false; attractorsAdding = false; });
+canvas.addEventListener('mousemove', (e) => {
+mouseX = e.clientX;
+mouseY = e.clientY;
+if (attractorsAdding && attractors.length > 0) {
+const a = attractors[attractors.length - 1];
+a.x = e.clientX;
+a.y = e.clientY;
+}
+});
+canvas.addEventListener('wheel', (e) => {
+e.preventDefault();
+attractorSize = Math.max(10, Math.min(100, attractorSize - e.deltaY * 0.05));
+if (attractors.length > 0) {
+attractors[attractors.length - 1].radius = attractorSize;
+}
+}, { passive: false });
+
+// Touch support
+canvas.addEventListener('touchstart', (e) => {
+e.preventDefault();
+const t = e.touches[0];
+const a = new Attractor(t.clientX, t.clientY);
+attractors.push(a);
+});
+canvas.addEventListener('touchmove', (e) => {
+e.preventDefault();
+if (attractors.length > 0) {
+const t = e.touches[0];
+attractors[attractors.length - 1].x = t.clientX;
+attractors[attractors.length - 1].y = t.clientY;
+}
+}, { passive: false });
+
+// --- Buttons ---
+document.getElementById('btnTrails').addEventListener('click', function() {
+showTrails = !showTrails;
+this.classList.toggle('active');
+if (!showTrails) {
+ctx.fillStyle = '#000';
+ctx.fillRect(0, 0, W, H);
+}
+});
+document.getElementById('btnColor').addEventListener('click', function() {
+const modes = ['rainbow', 'thermal', 'velocity'];
+const idx = (modes.indexOf(colorMode) + 1) % modes.length;
+colorMode = modes[idx];
+this.textContent = colorMode === 'rainbow' ? 'Rainbow' : colorMode === 'thermal' ? 'Thermal' : 'Velocity';
+});
+document.getElementById('btnTurbulence').addEventListener('click', function() {
+turbulence = !turbulence;
+this.classList.toggle('active');
+});
+document.getElementById('btnReset').addEventListener('click', () => {
+attractors.length = 0;
+particles.forEach(p => p.reset());
+ctx.fillStyle = '#000';
+ctx.fillRect(0, 0, W, H);
+});
+
+document.addEventListener('keydown', (e) => {
+if (e.key === 'r' || e.key === 'R') {
+attractors.length = 0;
+particles.forEach(p => p.reset());
+ctx.fillStyle = '#000';
+ctx.fillRect(0, 0, W, H);
+}
+});
+
+// --- Noise (simple sine-based) ---
+function noise2D(x, y) {
+return Math.sin(x * 1.7 + y * 0.9) * Math.cos(y * 1.3 - x * 0.8) +
+Math.sin(x * 3.1 + y * 2.7) * 0.5 +
+Math.cos(x * 0.7 - y * 3.4) * 0.3;
+}
+
+// --- Pre-rendered glow texture ---
+function createGlowTexture(radius, hue1, hue2) {
+const size = radius * 4;
+const c = document.createElement('canvas');
+c.width = c.height = size;
+const g = c.getContext('2d');
+const grad = g.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
+grad.addColorStop(0, `hsla(${hue1}, 100%, 80%, 1)`);
+grad.addColorStop(0.2, `hsla(${(hue1+hue2)/2}, 100%, 60%, 0.6)`);
+grad.addColorStop(0.5, `hsla(${hue2}, 100%, 50%, 0.2)`);
+grad.addColorStop(1, `hsla(${hue2}, 100%, 30%, 0)`);
+g.fillStyle = grad;
+g.fillRect(0, 0, size, size);
+return c;
+}
+
+// --- Time ---
+let lastTime = performance.now();
+let globalTime = 0;
+let particleIdx = 0;
+
+// --- Main Loop ---
+function animate(now) {
+requestAnimationFrame(animate);
+const dt = Math.min((now - lastTime) / 1000, 0.05);
+lastTime = now;
+globalTime += dt;
+
+// Background
+if (showTrails) {
+ctx.fillStyle = `rgba(0, 0, 0, ${TRAIL_ALPHA})`;
+ctx.fillRect(0, 0, W, H);
+} else {
+ctx.fillStyle = '#000';
+ctx.fillRect(0, 0, W, H);
+}
+
+// Update attractors
+for (let i = attractors.length - 1; i >= 0; i--) {
+if (!attractors[i].update(dt)) {
+attractors.splice(i, 1);
+}
+}
+
+// Update particles
+for (let i = 0; i < particles.length; i++) {
+const p = particles[i];
+let fx = 0, fy = 0;
+
+// Attractor forces
+for (let j = 0; j < attractors.length; j++) {
+const a = attractors[j];
+const dx = a.x - p.x;
+const dy = a.y - p.y;
+const distSq = dx * dx + dy * dy;
+const dist = Math.sqrt(distSq) + 1;
+const force = a.strength * p.mass / (distSq + 500);
+fx += (dx / dist) * force;
+fy += (dy / dist) * force;
+}
+
+// Turbulence (curl noise-ish)
+if (turbulence) {
+const scale = 0.003;
+const n1 = noise2D(p.x * scale + globalTime * 0.5, p.y * scale);
+const n2 = noise2D(p.x * scale + 100, p.y * scale + globalTime * 0.5);
+fx += n1 * 40 * p.mass;
+fy += n2 * 40 * p.mass;
+}
+
+// Subtle center gravity (keeps things from flying off)
+const cx = W / 2 - p.x;
+const cy = H / 2 - p.y;
+const cd = Math.sqrt(cx * cx + cy * cy) + 100;
+fx += (cx / cd) * 5 * p.mass;
+fy += (cy / cd) * 5 * p.mass;
+
+// Apply force
+p.vx += fx * dt;
+p.vy += fy * dt;
+p.vx *= DAMPING;
+p.vy *= DAMPING;
+
+p.x += p.vx * dt;
+p.y += p.vy * dt;
+
+// Color based on mode
+if (colorMode === 'rainbow') {
+p.hue = (p.hue + 0.3) % 360;
+}
+
+// Speed limit
+const speed = Math.sqrt(p.vx * p.vx + p.vy * p.vy);
+if (speed > 600) {
+p.vx = (p.vx / speed) * 600;
+p.vy = (p.vy / speed) * 600;
+}
+
+// Wrap or bounce
+if (p.x < -50) p.x = W + 50;
+if (p.x > W + 50) p.x = -50;
+if (p.y < -50) p.y = H + 50;
+if (p.y > H + 50) p.y = -50;
+
+// Determine draw color
+let color;
+if (colorMode === 'thermal') {
+const temp = Math.min(1, speed / 300);
+const hue = 240 - temp * 240; // blue to red
+const sat = 80 + temp * 20;
+const light = 40 + temp * 30;
+color = `hsla(${hue}, ${sat}%, ${light}%, ${0.6 + temp * 0.4})`;
+} else if (colorMode === 'velocity') {
+const vel = Math.min(1, speed / 400);
+color = `hsla(${200 + vel * 160}, 100%, ${50 + vel * 30}%, ${0.5 + vel * 0.5})`;
+} else {
+color = `hsla(${p.hue}, 85%, 65%, 0.8)`;
+}
+
+// Draw particle with glow
+const alpha = Math.min(1, 0.3 + speed / 500);
+ctx.beginPath();
+ctx.arc(p.x, p.y, p.radius * (0.8 + speed / 1000), 0, Math.PI * 2);
+ctx.fillStyle = color;
+ctx.fill();
+
+// Bright core
+if (speed > 50) {
+ctx.beginPath();
+ctx.arc(p.x, p.y, p.radius * 0.4, 0, Math.PI * 2);
+ctx.fillStyle = `rgba(255, 255, 255, ${Math.min(0.8, speed / 800)})`;
+ctx.fill();
+}
+}
+
+// Draw attractors
+for (const a of attractors) {
+const pulse = Math.sin(globalTime * 3 + a.pulsePhase) * 0.3 + 1;
+const r = a.radius * pulse;
+const glowTexSize = r * 6;
+
+// Outer glow
+const grad = ctx.createRadialGradient(a.x, a.y, 0, a.x, a.y, r * 3);
+grad.addColorStop(0, `hsla(${a.hue}, 100%, 80%, ${0.4 * pulse})`);
+grad.addColorStop(0.3, `hsla(${a.hue + 30}, 100%, 60%, ${0.2 * pulse})`);
+grad.addColorStop(0.6, `hsla(${a.hue + 60}, 100%, 50%, ${0.08 * pulse})`);
+grad.addColorStop(1, `hsla(${a.hue}, 100%, 30%, 0)`);
+ctx.beginPath();
+ctx.arc(a.x, a.y, r * 3, 0, Math.PI * 2);
+ctx.fillStyle = grad;
+ctx.fill();
+
+// Core
+const coreGrad = ctx.createRadialGradient(a.x, a.y, 0, a.x, a.y, r * 0.5);
+coreGrad.addColorStop(0, `rgba(255, 255, 255, 0.9)`);
+coreGrad.addColorStop(0.5, `hsla(${a.hue}, 100%, 70%, 0.5)`);
+coreGrad.addColorStop(1, `hsla(${a.hue}, 100%, 50%, 0)`);
+ctx.beginPath();
+ctx.arc(a.x, a.y, r * 0.5, 0, Math.PI * 2);
+ctx.fillStyle = coreGrad;
+ctx.fill();
+
+// Rotating ring
+ctx.save();
+ctx.translate(a.x, a.y);
+ctx.rotate(globalTime * 1.5 + a.pulsePhase);
+ctx.beginPath();
+ctx.ellipse(0, 0, r * 1.8, r * 0.4, 0, 0, Math.PI * 2);
+ctx.strokeStyle = `hsla(${a.hue + 60}, 100%, 70%, ${0.3 * pulse})`;
+ctx.lineWidth = 1.5;
+ctx.stroke();
+ctx.restore();
+
+// Second ring
+ctx.save();
+ctx.translate(a.x, a.y);
+ctx.rotate(-globalTime * 2 + a.pulsePhase + 1);
+ctx.beginPath();
+ctx.ellipse(0, 0, r * 2.2, r * 0.3, Math.PI / 4, 0, Math.PI * 2);
+ctx.strokeStyle = `hsla(${a.hue + 120}, 100%, 65%, ${0.2 * pulse})`;
+ctx.lineWidth = 1;
+ctx.stroke();
+ctx.restore();
+}
+
+// Update stats
+document.getElementById('stats').textContent = `Particles: ${PARTICLE_COUNT}`;
+document.getElementById('attCount').textContent = attractors.length;
+}
+
+// Start
+ctx.fillStyle = '#000';
+ctx.fillRect(0, 0, W, H);
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>

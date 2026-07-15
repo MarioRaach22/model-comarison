@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>gravity sandbox</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #050510;
+    overflow: hidden;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  canvas {
+    display: block;
+    cursor: crosshair;
+    position: fixed;
+    top: 0;
+    left: 0;
+  }
+  #ui {
+    position: fixed;
+    bottom: 28px;
+    left: 0;
+    right: 0;
+    text-align: center;
+    pointer-events: none;
+    z-index: 10;
+  }
+  #hint {
+    color: rgba(255, 255, 255, 0.25);
+    font-size: 13px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    font-weight: 300;
+    transition: opacity 0.6s ease;
+  }
+  #hint span {
+    display: inline-block;
+    animation: pulse-hint 2.4s ease-in-out infinite;
+  }
+  @keyframes pulse-hint {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 1; }
+  }
+  #count {
+    position: fixed;
+    top: 22px;
+    right: 28px;
+    color: rgba(255, 255, 255, 0.15);
+    font-size: 12px;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    letter-spacing: 1px;
+    pointer-events: none;
+    z-index: 10;
+    transition: opacity 0.3s;
+  }
+  #controls {
+    position: fixed;
+    bottom: 28px;
+    right: 28px;
+    color: rgba(255, 255, 255, 0.12);
+    font-size: 11px;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    text-align: right;
+    pointer-events: none;
+    z-index: 10;
+    line-height: 1.7;
+    letter-spacing: 0.5px;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <div id="hint"><span>✦ click to summon a star ✦</span></div>
+</div>
+<div id="count">0 stars</div>
+<div id="controls">[c] clear &nbsp; [r] reset</div>
+
+<script>
+// ============================================================
+//  GRAVITY SANDBOX  –  a particle gravity simulator
+// ============================================================
+
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const hint = document.getElementById('hint');
+const countEl = document.getElementById('count');
+
+let W, H;
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ─── Physics ──────────────────────────────────────────────
+const G          = 520;      // gravitational constant
+const SOFTENING  = 10;       // minimum distance (avoids singularities)
+const DAMPING    = 0.9985;   // velocity damping (1 = none, <1 = friction)
+const MAX_SPEED  = 420;      // speed cap
+const NUM_PARTICLES = 680;   // number of particles
+const FADE_ALPHA = 0.10;     // trail fade rate (lower = longer trails)
+const BIRTH_DUR  = 900;      // attractor birth animation duration (ms)
+
+// ─── State ─────────────────────────────────────────────────
+let particles  = [];
+let attractors = [];
+
+// ─── Factories ────────────────────────────────────────────
+function createAttractor(x, y, mass) {
+  return {
+    x, y,
+    mass: mass || (700 + Math.random() * 1500),
+    hue: 190 + Math.random() * 70,
+    birth: performance.now(),
+  };
+}
+
+function createParticle(x, y) {
+  return {
+    x, y,
+    vx: 0, vy: 0,
+    hue: Math.random() * 360,
+    mass: 0.5 + Math.random() * 2.5,
+    isBig: Math.random() < 0.03,  // rare bigger «star» particles
+  };
+}
+
+// ─── Initialisation ───────────────────────────────────────
+function init() {
+  attractors = [];
+  particles  = [];
+
+  // central attractor – fully active from the start
+  attractors.push(createAttractor(W / 2, H / 2, 1600));
+  attractors[0].hue   = 38;               // warm gold
+  attractors[0].birth = -Infinity;        // skip birth anim
+
+  const cx = W / 2, cy = H / 2;
+
+  for (let i = 0; i < NUM_PARTICLES; i++) {
+    const angle  = Math.random() * 2 * Math.PI;
+    const radius = 20 + Math.random() * Math.min(W, H) * 0.38;
+    const x = cx + Math.cos(angle) * radius;
+    const y = cy + Math.sin(angle) * radius;
+
+    const p = createParticle(x, y);
+
+    // orbital velocity with variation → mix of circular, elliptical, hyperbolic
+    const vCirc = Math.sqrt(G * 1600 / Math.max(radius, SOFTENING));
+    const vMul  = 0.45 + Math.random() * 1.1;
+    p.vx = -Math.sin(angle) * vCirc * vMul + (Math.random() - 0.5) * 12;
+    p.vy =  Math.cos(angle) * vCirc * vMul + (Math.random() - 0.5) * 12;
+
+    p.hue = (angle * 180 / Math.PI + 15) % 360;
+
+    particles.push(p);
+  }
+
+  updateCount();
+}
+
+// ─── Easing ────────────────────────────────────────────────
+function easeOutCubic(t) {
+  return 1 - Math.pow(1 - t, 3);
+}
+
+function easeOutQuint(t) {
+  return 1 - Math.pow(1 - t, 5);
+}
+
+// ─── Physics update ──────────────────────────────────────
+function update(dt) {
+  const now = performance.now();
+
+  for (const p of particles) {
+    let fx = 0, fy = 0;
+
+    for (const a of attractors) {
+      const dx = a.x - p.x;
+      const dy = a.y - p.y;
+      const distSq = dx * dx + dy * dy;
+      if (distSq < SOFTENING * SOFTENING) continue;
+      const dist = Math.sqrt(distSq);
+
+      // gravity ramps up during birth
+      const age   = a.birth === -Infinity ? 1 : Math.min((now - a.birth) / BIRTH_DUR, 1);
+      const gMul  = easeOutCubic(age);
+
+      const force = G * a.mass * gMul / distSq;
+      fx += force * dx / dist;
+      fy += force * dy / dist;
+    }
+
+    p.vx += fx * dt;
+    p.vy += fy * dt;
+
+    const speed = Math.sqrt(p.vx * p.vx + p.vy * p.vy);
+    if (speed > MAX_SPEED) {
+      p.vx = (p.vx / speed) * MAX_SPEED;
+      p.vy = (p.vy / speed) * MAX_SPEED;
+    }
+
+    p.vx *= DAMPING;
+    p.vy *= DAMPING;
+
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+
+    // wrap-around (soft margin)
+    const margin = 120;
+    if (p.x < -margin) p.x = W + margin;
+    if (p.x > W + margin) p.x = -margin;
+    if (p.y < -margin) p.y = H + margin;
+    if (p.y > H + margin) p.y = -margin;
+
+    // slow hue drift
+    p.hue = (p.hue + dt * 6) % 360;
+  }
+
+  // attractor radius (cached for draw)
+  for (const a of attractors) {
+    if (a.birth === -Infinity) {
+      a.displayRadius = Math.sqrt(a.mass) * 1.3;
+      continue;
+    }
+    const age = Math.min((now - a.birth) / BIRTH_DUR, 1);
+    const s   = easeOutQuint(age);
+    a.displayRadius = Math.sqrt(a.mass) * 1.3 * s;
+  }
+}
+
+// ─── Rendering ─────────────────────────────────────────────
+function draw(now) {
+  // 1. Fade background → creates trails
+  ctx.fillStyle = `rgba(5, 5, 16, ${FADE_ALPHA})`;
+  ctx.fillRect(0, 0, W, H);
+
+  // 2. Particles  (additive blending → glow)
+  ctx.globalCompositeOperation = 'lighter';
+
+  for (const p of particles) {
+    const speed = Math.sqrt(p.vx * p.vx + p.vy * p.vy);
+    const size  = p.isBig ? 2.5 + speed * 0.005 : 1.2 + speed * 0.004;
+    const bright = 52 + Math.min(speed * 0.09, 35);
+    const alpha  = Math.min(0.25 + speed * 0.003, 0.95);
+
+    ctx.fillStyle = `hsla(${p.hue}, 100%, ${bright}%, ${alpha})`;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, Math.min(size, 4.5), 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // 3. Attractors
+  for (const a of attractors) {
+    const r     = a.displayRadius || 1;
+    const pulse = 0.7 + 0.3 * Math.sin(now * 0.0022 + a.hue);
+
+    // --- outer corona (big, soft) ---
+    const grad1 = ctx.createRadialGradient(a.x, a.y, 0, a.x, a.y, r * 5);
+    const h1 = a.hue;
+    grad1.addColorStop(0,   `hsla(${h1}, 100%, 70%, ${0.18 * pulse})`);
+    grad1.addColorStop(0.4, `hsla(${h1 + 20}, 90%, 55%, ${0.06 * pulse})`);
+    grad1.addColorStop(1,   `hsla(${h1 + 40}, 80%, 40%, 0)`);
+    ctx.fillStyle = grad1;
+    ctx.beginPath();
+    ctx.arc(a.x, a.y, r * 5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // --- inner glow ---
+    const grad2 = ctx.createRadialGradient(a.x, a.y, 0, a.x, a.y, r);
+    grad2.addColorStop(0,   `hsla(${h1}, 60%, 96%, ${0.85 * pulse})`);
+    grad2.addColorStop(0.25,`hsla(${h1}, 80%, 82%, ${0.6 * pulse})`);
+    grad2.addColorStop(0.6, `hsla(${h1}, 90%, 62%, ${0.25 * pulse})`);
+    grad2.addColorStop(1,   `hsla(${h1}, 100%, 50%, 0)`);
+    ctx.fillStyle = grad2;
+    ctx.beginPath();
+    ctx.arc(a.x, a.y, r, 0, Math.PI * 2);
+    ctx.fill();
+
+    // --- bright core ---
+    ctx.fillStyle = `rgba(255, 255, 255, ${0.65 * pulse})`;
+    ctx.beginPath();
+    ctx.arc(a.x, a.y, r * 0.22, 0, Math.PI * 2);
+    ctx.fill();
+
+    // --- tiny hot point ---
+    ctx.fillStyle = `rgba(255, 255, 255, ${0.95 * pulse})`;
+    ctx.beginPath();
+    ctx.arc(a.x, a.y, r * 0.05, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.globalCompositeOperation = 'source-over';
+}
+
+// ─── Animation Loop ────────────────────────────────────────
+let lastTime = 0;
+
+function loop(time) {
+  const dt = Math.min((time - lastTime) / 1000, 0.05);
+  lastTime = time;
+
+  update(dt);
+  draw(time);
+
+  requestAnimationFrame(loop);
+}
+
+// ─── Interaction ───────────────────────────────────────────
+canvas.addEventListener('click', (e) => {
+  const rect = canvas.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+
+  attractors.push(createAttractor(x, y));
+  updateCount();
+
+  // hide hint after first click
+  hint.style.opacity = '0';
+  setTimeout(() => { hint.style.display = 'none'; }, 600);
+});
+
+// keyboard shortcuts
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'r' || e.key === 'R') {
+    init();
+    hint.style.display = '';
+    hint.style.opacity = '1';
+    return;
+  }
+  if (e.key === 'c' || e.key === 'C') {
+    // remove all attractors except the first (center) one
+    attractors = attractors.slice(0, 1);
+    updateCount();
+  }
+});
+
+function updateCount() {
+  const n = attractors.length;
+  countEl.textContent = `${n} ${n === 1 ? 'star' : 'stars'}`;
+}
+
+// ─── Go! ───────────────────────────────────────────────────
+init();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

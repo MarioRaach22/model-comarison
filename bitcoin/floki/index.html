@@ -1,0 +1,1525 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bitcoin & Monero Live Price Chart</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='45' fill='%230a0e17'/><text x='35' y='68' font-size='45' fill='%2300ff88'>₿</text><text x='60' y='68' font-size='30' fill='%23a855f7'>X</text></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    :root {
+      --bg-deep: #0a0e17;
+      --bg-surface: #131a2a;
+      --border: #1e2a42;
+      --text-primary: #e8edf5;
+      --text-secondary: #6b7a99;
+      --btc-green: #00ff88;
+      --btc-green-dim: #00cc6a;
+      --xmr-purple: #a855f7;
+      --xmr-purple-dim: #9333ea;
+      --accent-red: #ff3366;
+      --btc-gradient-start: rgba(0, 255, 136, 0.3);
+      --btc-gradient-end: rgba(0, 255, 136, 0.02);
+      --xmr-gradient-start: rgba(168, 85, 247, 0.3);
+      --xmr-gradient-end: rgba(168, 85, 247, 0.02);
+    }
+
+    ::selection {
+      background: var(--xmr-purple);
+      color: var(--bg-deep);
+    }
+
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: var(--bg-surface);
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: var(--border);
+      border-radius: 4px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: var(--text-secondary);
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg-deep);
+      color: var(--text-primary);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      position: relative;
+      overflow-x: hidden;
+    }
+
+    /* Grid pattern background */
+    body::before {
+      content: '';
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-image: 
+        linear-gradient(rgba(0, 255, 136, 0.02) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 255, 136, 0.02) 1px, transparent 1px);
+      background-size: 50px 50px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 950px;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* Header */
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 28px;
+    }
+
+    .logos {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btc-logo {
+      width: 36px;
+      height: 36px;
+    }
+
+    .xmr-logo {
+      width: 32px;
+      height: 32px;
+      opacity: 0.9;
+    }
+
+    .separator {
+      font-family: 'Space Mono', monospace;
+      font-size: 18px;
+      color: var(--text-secondary);
+      margin: 0 4px;
+    }
+
+    .header-text {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .header-title {
+      font-family: 'Space Mono', monospace;
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+
+    .header-subtitle {
+      font-size: 12px;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+    }
+
+    /* Main Card */
+    .card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 28px;
+      backdrop-filter: blur(10px);
+      box-shadow: 
+        0 4px 24px rgba(0, 0, 0, 0.4),
+        0 0 80px rgba(168, 85, 247, 0.03);
+    }
+
+    /* View Toggle */
+    .view-toggle {
+      display: flex;
+      justify-content: center;
+      margin-bottom: 24px;
+    }
+
+    .toggle-container {
+      display: flex;
+      background: var(--bg-deep);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 4px;
+      gap: 4px;
+    }
+
+    .toggle-btn {
+      font-family: 'Space Mono', monospace;
+      font-size: 13px;
+      font-weight: 500;
+      padding: 10px 20px;
+      border: none;
+      border-radius: 7px;
+      background: transparent;
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: all 0.3s ease;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .toggle-btn::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+      border-radius: 7px;
+    }
+
+    .toggle-btn[data-view="btc"]::before {
+      background: var(--btc-green);
+    }
+
+    .toggle-btn[data-view="xmr"]::before {
+      background: var(--xmr-purple);
+    }
+
+    .toggle-btn[data-view="compare"]::before {
+      background: linear-gradient(135deg, var(--btc-green), var(--xmr-purple));
+    }
+
+    .toggle-btn:hover {
+      color: var(--text-primary);
+    }
+
+    .toggle-btn:hover::before {
+      opacity: 0.15;
+    }
+
+    .toggle-btn.active {
+      color: var(--bg-deep);
+    }
+
+    .toggle-btn.active::before {
+      opacity: 1;
+    }
+
+    .toggle-btn.active {
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+    }
+
+    /* Price Section */
+    .price-section {
+      margin-bottom: 24px;
+    }
+
+    .price-cards {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      transition: all 0.4s ease;
+    }
+
+    .price-cards.single {
+      grid-template-columns: 1fr;
+    }
+
+    .price-cards.single .price-card.hidden {
+      display: none;
+    }
+
+    .price-card {
+      text-align: center;
+      padding: 20px;
+      border-radius: 12px;
+      background: var(--bg-deep);
+      border: 1px solid var(--border);
+      transition: all 0.4s ease;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .price-card::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      opacity: 0.5;
+      transition: opacity 0.3s ease;
+    }
+
+    .price-card.btc::after {
+      background: linear-gradient(90deg, transparent, var(--btc-green), transparent);
+    }
+
+    .price-card.xmr::after {
+      background: linear-gradient(90deg, transparent, var(--xmr-purple), transparent);
+    }
+
+    .price-card:hover::after {
+      opacity: 1;
+    }
+
+    .coin-label {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .coin-label svg {
+      width: 20px;
+      height: 20px;
+    }
+
+    .coin-label span {
+      font-size: 12px;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 2px;
+    }
+
+    .price-value {
+      font-family: 'Space Mono', monospace;
+      font-size: clamp(28px, 5vw, 40px);
+      font-weight: 700;
+      margin-bottom: 8px;
+      position: relative;
+      display: inline-block;
+      transition: transform 0.15s ease;
+    }
+
+    .price-card.btc .price-value {
+      color: var(--text-primary);
+    }
+
+    .price-card.xmr .price-value {
+      color: var(--text-primary);
+    }
+
+    .price-value.pulse {
+      animation: pricePulse 0.5s ease;
+    }
+
+    @keyframes pricePulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.03); }
+    }
+
+    .price-change {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-family: 'Space Mono', monospace;
+      font-size: 14px;
+      font-weight: 500;
+      padding: 5px 12px;
+      border-radius: 16px;
+      transition: all 0.3s ease;
+    }
+
+    .price-change.positive {
+      background: rgba(0, 255, 136, 0.1);
+    }
+
+    .price-card.btc .price-change.positive {
+      color: var(--btc-green);
+    }
+
+    .price-card.xmr .price-change.positive {
+      color: var(--xmr-purple);
+    }
+
+    .price-change.negative {
+      background: rgba(255, 51, 102, 0.1);
+      color: var(--accent-red);
+    }
+
+    .price-change.neutral {
+      background: rgba(107, 122, 153, 0.1);
+      color: var(--text-secondary);
+    }
+
+    .price-change svg {
+      width: 12px;
+      height: 12px;
+    }
+
+    /* Performance Comparison */
+    .performance-row {
+      display: none;
+      justify-content: center;
+      gap: 24px;
+      margin-bottom: 20px;
+      padding: 16px;
+      background: var(--bg-deep);
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      transition: all 0.4s ease;
+    }
+
+    .performance-row.visible {
+      display: flex;
+    }
+
+    .perf-stat {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .perf-label {
+      font-size: 12px;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .perf-value {
+      font-family: 'Space Mono', monospace;
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .perf-value.positive {
+      color: var(--btc-green);
+    }
+
+    .perf-value.negative {
+      color: var(--accent-red);
+    }
+
+    .perf-divider {
+      width: 1px;
+      height: 24px;
+      background: var(--border);
+    }
+
+    .perf-stat.gap .perf-value.winner {
+      color: var(--btc-green);
+    }
+
+    .perf-stat.gap .perf-value.winner-xmr {
+      color: var(--xmr-purple);
+    }
+
+    /* Time Range Selector */
+    .range-selector {
+      display: flex;
+      gap: 8px;
+      justify-content: center;
+      margin-bottom: 20px;
+    }
+
+    .range-btn {
+      font-family: 'Space Mono', monospace;
+      font-size: 13px;
+      font-weight: 500;
+      padding: 9px 18px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: transparent;
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: all 0.2s ease;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .range-btn::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: var(--btc-green);
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    }
+
+    .range-btn:hover {
+      color: var(--text-primary);
+      border-color: var(--text-secondary);
+    }
+
+    .range-btn:hover::before {
+      opacity: 0.1;
+    }
+
+    .range-btn.active {
+      color: var(--text-primary);
+      border-color: var(--text-primary);
+      box-shadow: 0 0 20px rgba(255, 255, 255, 0.1);
+    }
+
+    .range-btn.active::before {
+      opacity: 0.15;
+      background: linear-gradient(135deg, var(--btc-green), var(--xmr-purple));
+    }
+
+    .range-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    /* Chart Container */
+    .chart-container {
+      position: relative;
+      height: 340px;
+      margin-bottom: 20px;
+    }
+
+    .chart-loading {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      background: var(--bg-surface);
+      border-radius: 12px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s ease;
+    }
+
+    .chart-loading.visible {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .loading-spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid var(--border);
+      border-top-color: var(--btc-green);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .loading-text {
+      font-size: 13px;
+      color: var(--text-secondary);
+    }
+
+    .chart-error {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      background: var(--bg-surface);
+      border-radius: 12px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s ease;
+    }
+
+    .chart-error.visible {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .error-icon {
+      width: 48px;
+      height: 48px;
+      color: var(--accent-red);
+    }
+
+    .error-text {
+      font-size: 14px;
+      color: var(--text-secondary);
+    }
+
+    .retry-btn {
+      font-family: 'Space Mono', monospace;
+      font-size: 13px;
+      padding: 10px 24px;
+      border: 1px solid var(--accent-red);
+      border-radius: 8px;
+      background: rgba(255, 51, 102, 0.1);
+      color: var(--accent-red);
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .retry-btn:hover {
+      background: rgba(255, 51, 102, 0.2);
+    }
+
+    /* Chart Legend */
+    .chart-legend {
+      display: none;
+      justify-content: center;
+      gap: 24px;
+      margin-bottom: 12px;
+      transition: all 0.4s ease;
+    }
+
+    .chart-legend.visible {
+      display: flex;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: var(--text-secondary);
+    }
+
+    .legend-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+
+    .legend-dot.btc {
+      background: var(--btc-green);
+      box-shadow: 0 0 8px var(--btc-green);
+    }
+
+    .legend-dot.xmr {
+      background: var(--xmr-purple);
+      box-shadow: 0 0 8px var(--xmr-purple);
+    }
+
+    .legend-label {
+      font-family: 'Space Mono', monospace;
+      font-weight: 500;
+    }
+
+    /* Footer */
+    .footer {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 8px;
+      margin-top: 20px;
+      font-size: 12px;
+      color: var(--text-secondary);
+    }
+
+    .refresh-indicator {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .refresh-dot {
+      width: 6px;
+      height: 6px;
+      background: var(--xmr-purple);
+      border-radius: 50%;
+      animation: refreshPulse 2s ease-in-out infinite;
+    }
+
+    @keyframes refreshPulse {
+      0%, 100% { opacity: 0.3; transform: scale(1); }
+      50% { opacity: 1; transform: scale(1.3); }
+    }
+
+    .refresh-indicator.error .refresh-dot {
+      background: var(--accent-red);
+      animation: none;
+    }
+
+    .last-update {
+      opacity: 0.7;
+    }
+
+    /* Responsive */
+    @media (max-width: 650px) {
+      body {
+        padding: 16px;
+      }
+
+      .card {
+        padding: 20px;
+      }
+
+      .price-cards {
+        grid-template-columns: 1fr;
+      }
+
+      .performance-row {
+        flex-direction: column;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .perf-divider {
+        width: 40px;
+        height: 1px;
+      }
+
+      .range-selector {
+        flex-wrap: wrap;
+      }
+
+      .range-btn {
+        flex: 1 1 calc(50% - 4px);
+        min-width: 65px;
+        text-align: center;
+      }
+
+      .chart-container {
+        height: 260px;
+      }
+
+      .toggle-btn {
+        padding: 8px 14px;
+        font-size: 12px;
+      }
+    }
+
+    /* Entrance animations */
+    .fade-in {
+      animation: fadeIn 0.6s ease forwards;
+    }
+
+    .fade-in-delay-1 {
+      animation: fadeIn 0.6s ease 0.1s forwards;
+      opacity: 0;
+    }
+
+    .fade-in-delay-2 {
+      animation: fadeIn 0.6s ease 0.2s forwards;
+      opacity: 0;
+    }
+
+    .fade-in-delay-3 {
+      animation: fadeIn 0.6s ease 0.3s forwards;
+      opacity: 0;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Content transition animations */
+    .content-fade {
+      transition: opacity 0.3s ease, transform 0.3s ease;
+    }
+
+    .content-fade.exit {
+      opacity: 0;
+      transform: translateY(-10px);
+    }
+
+    .content-fade.enter {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header class="header fade-in">
+      <div class="logos">
+        <svg class="btc-logo" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="50" cy="50" r="48" fill="#f7931a"/>
+          <path d="M65.5 50.5c0-7-4.5-12.5-11.5-12.5h-9v-5c0-2.5-2-4.5-4.5-4.5s-4.5 2-4.5 4.5v5h-6v-5c0-2.5-2-4.5-4.5-4.5s-4.5 2-4.5 4.5v5h-6c-7 0-11.5 5.5-11.5 12.5 0 9 7.5 11 14.5 12.5v21c-2.5 1-6.5 2.5-9.5 2.5-2.5 0-3 2-3.5 4.5 0 1.5 1 3 3 3h8c2.5 0 4.5-2 4.5-4.5s-2-4.5-4.5-4.5h-6c-8.5-2-14.5-6.5-14.5-16.5 0-9 7.5-12 14.5-12h6v-5c0-2.5 2-4.5 4.5-4.5s4.5 2 4.5 4.5v5h6v-5c0-2.5 2-4.5 4.5-4.5s4.5 2 4.5 4.5v5h9c7 0 11.5 4 11.5 11 0 9-7.5 12-14.5 13v21.5c2.5 1 6.5 2.5 9.5 2.5 2.5 0 3-2 3.5-4.5 0-1.5-1-3-3-3h-8c-2.5 0-4.5 2-4.5 4.5s2 4.5 4.5 4.5h6c8.5 2 14.5 6.5 14.5 16.5 0 10-7.5 12.5-14.5 12.5h-25c-2.5 0-4.5 2-4.5 4.5s2 4.5 4.5 4.5h25c7 0 12-5.5 12-12.5v-42c7-1.5 14.5-3.5 14.5-12.5z" fill="white"/>
+        </svg>
+        <svg class="xmr-logo" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="50" cy="50" r="48" fill="#a855f7"/>
+          <text x="50" y="67" font-size="48" text-anchor="middle" fill="white" font-family="Arial" font-weight="bold">M</text>
+        </svg>
+      </div>
+      <div class="header-text">
+        <span class="header-title">BTC / XMR</span>
+        <span class="header-subtitle">Live Market Data</span>
+      </div>
+    </header>
+
+    <div class="card">
+      <div class="view-toggle fade-in-delay-1">
+        <div class="toggle-container">
+          <button class="toggle-btn" data-view="btc">BTC</button>
+          <button class="toggle-btn" data-view="xmr">XMR</button>
+          <button class="toggle-btn active" data-view="compare">Compare</button>
+        </div>
+      </div>
+
+      <div class="price-section fade-in-delay-1">
+        <div class="price-cards" id="priceCards">
+          <div class="price-card btc" id="btcPriceCard">
+            <div class="coin-label">
+              <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="50" cy="50" r="48" fill="#f7931a"/>
+                <path d="M65.5 50.5c0-7-4.5-12.5-11.5-12.5h-9v-5c0-2.5-2-4.5-4.5-4.5s-4.5 2-4.5 4.5v5h-6v-5c0-2.5-2-4.5-4.5-4.5s-4.5 2-4.5 4.5v5h-6c-7 0-11.5 5.5-11.5 12.5 0 9 7.5 11 14.5 12.5v21c-2.5 1-6.5 2.5-9.5 2.5-2.5 0-3 2-3.5 4.5 0 1.5 1 3 3 3h8c2.5 0 4.5-2 4.5-4.5s-2-4.5-4.5-4.5h-6c-8.5-2-14.5-6.5-14.5-16.5 0-9 7.5-12 14.5-12h6v-5c0-2.5 2-4.5 4.5-4.5s4.5 2 4.5 4.5v5h6v-5c0-2.5 2-4.5 4.5-4.5s4.5 2 4.5 4.5v5h9c7 0 11.5 4 11.5 11 0 9-7.5 12-14.5 13v21.5c2.5 1 6.5 2.5 9.5 2.5 2.5 0 3-2 3.5-4.5 0-1.5-1-3-3-3h-8c-2.5 0-4.5 2-4.5 4.5s2 4.5 4.5 4.5h6c8.5 2 14.5 6.5 14.5 16.5 0 10-7.5 12.5-14.5 12.5h-25c-2.5 0-4.5 2-4.5 4.5s2 4.5 4.5 4.5h25c7 0 12-5.5 12-12.5v-42c7-1.5 14.5-3.5 14.5-12.5z" fill="white"/>
+              </svg>
+              <span>Bitcoin</span>
+            </div>
+            <div class="price-value" id="btcPrice">Loading...</div>
+            <div class="price-change neutral" id="btcChange">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/></svg>
+              <span id="btcChangeText">--</span>
+            </div>
+          </div>
+
+          <div class="price-card xmr" id="xmrPriceCard">
+            <div class="coin-label">
+              <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="50" cy="50" r="48" fill="#a855f7"/>
+                <text x="50" y="67" font-size="48" text-anchor="middle" fill="white" font-family="Arial" font-weight="bold">M</text>
+              </svg>
+              <span>Monero</span>
+            </div>
+            <div class="price-value" id="xmrPrice">Loading...</div>
+            <div class="price-change neutral" id="xmrChange">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/></svg>
+              <span id="xmrChangeText">--</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="performance-row" id="performanceRow">
+        <div class="perf-stat">
+          <span class="perf-label">BTC 7D:</span>
+          <span class="perf-value" id="btc7dPerf">--</span>
+        </div>
+        <div class="perf-divider"></div>
+        <div class="perf-stat">
+          <span class="perf-label">XMR 7D:</span>
+          <span class="perf-value" id="xmr7dPerf">--</span>
+        </div>
+        <div class="perf-divider"></div>
+        <div class="perf-stat gap">
+          <span class="perf-label">Leader:</span>
+          <span class="perf-value" id="perfGap">--</span>
+        </div>
+      </div>
+
+      <div class="range-selector fade-in-delay-2">
+        <button class="range-btn" data-range="1H">1H</button>
+        <button class="range-btn active" data-range="24H">24H</button>
+        <button class="range-btn" data-range="7D">7D</button>
+        <button class="range-btn" data-range="30D">30D</button>
+      </div>
+
+      <div class="chart-legend" id="chartLegend">
+        <div class="legend-item">
+          <div class="legend-dot btc"></div>
+          <span class="legend-label">Bitcoin (BTC)</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-dot xmr"></div>
+          <span class="legend-label">Monero (XMR)</span>
+        </div>
+      </div>
+
+      <div class="chart-container fade-in-delay-3">
+        <canvas id="priceChart"></canvas>
+        <div class="chart-loading" id="chartLoading">
+          <div class="loading-spinner"></div>
+          <div class="loading-text">Fetching market data...</div>
+        </div>
+        <div class="chart-error" id="chartError">
+          <svg class="error-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/>
+            <path d="M12 8v4m0 4h.01"/>
+          </svg>
+          <div class="error-text">Unable to fetch chart data</div>
+          <button class="retry-btn" id="retryBtn">Retry</button>
+        </div>
+      </div>
+    </div>
+
+    <footer class="footer fade-in-delay-3">
+      <div class="refresh-indicator" id="refreshIndicator">
+        <span class="refresh-dot"></span>
+        <span id="refreshText">Updates in 10s</span>
+      </div>
+      <span class="last-update" id="lastUpdate"></span>
+    </footer>
+  </div>
+
+  <script>
+    // State management
+    const state = {
+      currentView: 'compare',
+      selectedRange: '24H',
+      
+      btc: {
+        currentPrice: null,
+        priceChange24h: 0,
+        changePercent24h: 0,
+        historicalData: [],
+        changePercent7d: 0
+      },
+      xmr: {
+        currentPrice: null,
+        priceChange24h: 0,
+        changePercent24h: 0,
+        historicalData: [],
+        changePercent7d: 0
+      },
+      
+      lastUpdate: null,
+      isLoading: false,
+      refreshCountdown: 10,
+      chart: null
+    };
+
+    // API configuration
+    const BINANCE_API = 'https://api.binance.com/api/v3';
+
+    // Interval mapping for Binance klines
+    const intervalMap = {
+      '1H': { binance: '1m', limit: 60 },
+      '24H': { binance: '15m', limit: 96 },
+      '7D': { binance: '1h', limit: 168 },
+      '30D': { binance: '4h', limit: 180 }
+    };
+
+    // DOM elements
+    const priceCardsEl = document.getElementById('priceCards');
+    const btcPriceEl = document.getElementById('btcPrice');
+    const xmrPriceEl = document.getElementById('xmrPrice');
+    const btcChangeEl = document.getElementById('btcChange');
+    const xmrChangeEl = document.getElementById('xmrChange');
+    const btcChangeTextEl = document.getElementById('btcChangeText');
+    const xmrChangeTextEl = document.getElementById('xmrChangeText');
+    const performanceRowEl = document.getElementById('performanceRow');
+    const btc7dPerfEl = document.getElementById('btc7dPerf');
+    const xmr7dPerfEl = document.getElementById('xmr7dPerf');
+    const perfGapEl = document.getElementById('perfGap');
+    const toggleButtons = document.querySelectorAll('.toggle-btn');
+    const rangeButtons = document.querySelectorAll('.range-btn');
+    const chartCanvas = document.getElementById('priceChart');
+    const chartLoadingEl = document.getElementById('chartLoading');
+    const chartErrorEl = document.getElementById('chartError');
+    const chartLegendEl = document.getElementById('chartLegend');
+    const retryBtn = document.getElementById('retryBtn');
+    const refreshIndicator = document.getElementById('refreshIndicator');
+    const refreshTextEl = document.getElementById('refreshText');
+    const lastUpdateEl = document.getElementById('lastUpdate');
+
+    // Format currency
+    function formatPrice(price, coin = 'BTC') {
+      if (price === null || price === undefined) return 'Loading...';
+      
+      const decimals = coin === 'BTC' ? 2 : 2;
+      return new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: 'USD',
+        minimumFractionDigits: decimals,
+        maximumFractionDigits: decimals
+      }).format(price);
+    }
+
+    // Format percentage
+    function formatPercent(value, showSign = true) {
+      const sign = showSign && value >= 0 ? '+' : '';
+      return `${sign}${value.toFixed(2)}%`;
+    }
+
+    // Format date for tooltip
+    function formatDate(timestamp, range) {
+      const date = new Date(timestamp);
+      
+      if (range === '1H' || range === '24H') {
+        return date.toLocaleString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+      } else {
+        return date.toLocaleString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+      }
+    }
+
+    // Format time for last update
+    function formatTime(date) {
+      return date.toLocaleTimeString('en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+      });
+    }
+
+    // Calculate percentage change
+    function calcPercentChange(oldPrice, newPrice) {
+      if (!oldPrice || !newPrice) return 0;
+      return ((newPrice - oldPrice) / oldPrice) * 100;
+    }
+
+    // Normalize data to percentage change from start
+    function normalizeToPercentChange(data) {
+      if (!data || data.length === 0) return [];
+      const startPrice = data[0].close;
+      return data.map(item => ({
+        timestamp: item.timestamp,
+        value: ((item.close - startPrice) / startPrice) * 100
+      }));
+    }
+
+    // Fetch current price from Binance
+    async function fetchCurrentPrice(coin) {
+      const symbol = coin === 'btc' ? 'BTCUSDT' : 'XMRUSDT';
+      
+      try {
+        const response = await fetch(`${BINANCE_API}/ticker/24hr?symbol=${symbol}`);
+        if (!response.ok) throw new Error('Failed to fetch price');
+        
+        const data = await response.json();
+        const newPrice = parseFloat(data.lastPrice);
+        const priceChange = parseFloat(data.priceChange);
+        const priceChangePercent = parseFloat(data.priceChangePercent);
+
+        // Check if price changed for pulse animation
+        const priceEl = coin === 'btc' ? btcPriceEl : xmrPriceEl;
+        if (state[coin].currentPrice !== null && newPrice !== state[coin].currentPrice) {
+          priceEl.classList.add('pulse');
+          setTimeout(() => priceEl.classList.remove('pulse'), 500);
+        }
+
+        state[coin].currentPrice = newPrice;
+        state[coin].priceChange24h = priceChange;
+        state[coin].changePercent24h = priceChangePercent;
+        state.lastUpdate = new Date();
+
+        updatePriceDisplay(coin);
+      } catch (error) {
+        console.error(`Error fetching ${coin} price:`, error);
+      }
+    }
+
+    // Fetch historical klines from Binance
+    async function fetchHistorical(coin, range) {
+      const config = intervalMap[range];
+      if (!config) return;
+
+      const symbol = coin === 'btc' ? 'BTCUSDT' : 'XMRUSDT';
+      
+      showLoading(true);
+
+      try {
+        const response = await fetch(
+          `${BINANCE_API}/klines?symbol=${symbol}&interval=${config.binance}&limit=${config.limit}`
+        );
+        if (!response.ok) throw new Error('Failed to fetch historical data');
+
+        const data = await response.json();
+        state[coin].historicalData = data.map(item => ({
+          timestamp: item[0],
+          open: parseFloat(item[1]),
+          high: parseFloat(item[2]),
+          low: parseFloat(item[3]),
+          close: parseFloat(item[4]),
+          volume: parseFloat(item[5])
+        }));
+
+        // Calculate 7d change if we have enough data
+        if (state[coin].historicalData.length >= 2) {
+          const firstPrice = state[coin].historicalData[0].close;
+          const lastPrice = state[coin].historicalData[state[coin].historicalData.length - 1].close;
+          state[coin].changePercent7d = calcPercentChange(firstPrice, lastPrice);
+        }
+
+        updateChart();
+      } catch (error) {
+        console.error(`Error fetching ${coin} historical data:`, error);
+        showLoading(false);
+        showError(true);
+      }
+    }
+
+    // Update price display
+    function updatePriceDisplay(coin) {
+      const data = state[coin];
+      const priceEl = coin === 'btc' ? btcPriceEl : xmrPriceEl;
+      const changeEl = coin === 'btc' ? btcChangeEl : xmrChangeEl;
+      const changeTextEl = coin === 'btc' ? btcChangeTextEl : xmrChangeTextEl;
+
+      priceEl.textContent = formatPrice(data.currentPrice, coin.toUpperCase());
+
+      const isPositive = data.changePercent24h >= 0;
+      const isNeutral = data.changePercent24h === 0;
+
+      changeEl.className = `price-change ${isNeutral ? 'neutral' : (isPositive ? 'positive' : 'negative')}`;
+
+      const arrow = isPositive
+        ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 15l-6-6-6 6"/></svg>'
+        : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>';
+
+      changeTextEl.innerHTML = `${arrow}<span>${formatPercent(data.changePercent24h)}</span>`;
+    }
+
+    // Update performance comparison
+    function updatePerformance() {
+      const btc7d = state.btc.changePercent7d;
+      const xmr7d = state.xmr.changePercent7d;
+
+      btc7dPerfEl.textContent = formatPercent(btc7d);
+      btc7dPerfEl.className = `perf-value ${btc7d >= 0 ? 'positive' : 'negative'}`;
+
+      xmr7dPerfEl.textContent = formatPercent(xmr7d);
+      xmr7dPerfEl.className = `perf-value ${xmr7d >= 0 ? 'positive' : 'negative'}`;
+
+      // Calculate gap
+      const gap = btc7d - xmr7d;
+      const winner = gap >= 0 ? 'BTC' : 'XMR';
+      const gapValue = Math.abs(gap);
+      
+      perfGapEl.textContent = `${winner} +${gapValue.toFixed(2)}%`;
+      perfGapEl.className = `perf-value ${winner === 'BTC' ? 'winner' : 'winner-xmr'}`;
+    }
+
+    // Update view based on selected toggle
+    function updateView(newView) {
+      if (newView === state.currentView) return;
+
+      // Animate content transition
+      const content = document.querySelector('.price-section');
+      content.classList.add('content-fade', 'exit');
+
+      setTimeout(() => {
+        state.currentView = newView;
+        
+        // Update toggle buttons
+        toggleButtons.forEach(btn => {
+          btn.classList.toggle('active', btn.dataset.view === newView);
+        });
+
+        // Update price cards layout
+        priceCardsEl.classList.toggle('single', newView !== 'compare');
+        
+        // Update performance row visibility
+        performanceRowEl.classList.toggle('visible', newView === 'compare');
+
+        // Update chart legend visibility
+        chartLegendEl.classList.toggle('visible', newView === 'compare');
+
+        // Update charts
+        updateChart();
+        updatePerformance();
+
+        content.classList.remove('exit');
+        content.classList.add('enter');
+        
+        setTimeout(() => {
+          content.classList.remove('enter');
+        }, 50);
+      }, 150);
+    }
+
+    // Show/hide loading state
+    function showLoading(show) {
+      chartLoadingEl.classList.toggle('visible', show);
+      chartCanvas.style.opacity = show ? 0 : 1;
+    }
+
+    // Show/hide error state
+    function showError(show) {
+      chartErrorEl.classList.toggle('visible', show);
+      chartCanvas.style.opacity = show ? 0 : 1;
+    }
+
+    // Create/update chart
+    function updateChart() {
+      showError(false);
+
+      const range = state.selectedRange;
+      const view = state.currentView;
+      
+      // Prepare data based on view mode
+      let datasets = [];
+      let labels = [];
+      let yAxisConfig = {};
+
+      if (view === 'btc' || view === 'compare') {
+        if (state.btc.historicalData.length === 0) return;
+        labels = state.btc.historicalData.map(item => item.timestamp);
+      } else if (view === 'xmr') {
+        if (state.xmr.historicalData.length === 0) return;
+        labels = state.xmr.historicalData.map(item => item.timestamp);
+      }
+
+      if (view === 'compare') {
+        // Normalize both to percentage change
+        const btcNormalized = normalizeToPercentChange(state.btc.historicalData);
+        const xmrNormalized = normalizeToPercentChange(state.xmr.historicalData);
+
+        yAxisConfig = {
+          display: true,
+          position: 'left',
+          grid: {
+            color: 'rgba(30, 42, 66, 0.5)',
+            drawBorder: false
+          },
+          ticks: {
+            color: '#6b7a99',
+            font: {
+              family: 'Space Mono',
+              size: 11
+            },
+            callback: (value) => (value >= 0 ? '+' : '') + value.toFixed(1) + '%',
+            maxTicksLimit: 5
+          },
+          border: {
+            display: false
+          }
+        };
+
+        datasets = [
+          {
+            label: 'Bitcoin (BTC)',
+            data: btcNormalized.map(item => ({ x: item.timestamp, y: item.value })),
+            borderColor: '#00ff88',
+            backgroundColor: 'rgba(0, 255, 136, 0.1)',
+            borderWidth: 2.5,
+            fill: true,
+            tension: 0.3,
+            pointRadius: 0,
+            pointHoverRadius: 6,
+            pointHoverBackgroundColor: '#00ff88',
+            pointHoverBorderColor: '#fff',
+            pointHoverBorderWidth: 2
+          },
+          {
+            label: 'Monero (XMR)',
+            data: xmrNormalized.map(item => ({ x: item.timestamp, y: item.value })),
+            borderColor: '#a855f7',
+            backgroundColor: 'rgba(168, 85, 247, 0.1)',
+            borderWidth: 2.5,
+            fill: true,
+            tension: 0.3,
+            pointRadius: 0,
+            pointHoverRadius: 6,
+            pointHoverBackgroundColor: '#a855f7',
+            pointHoverBorderColor: '#fff',
+            pointHoverBorderWidth: 2
+          }
+        ];
+      } else {
+        const coin = view;
+        const data = state[coin].historicalData;
+        const color = coin === 'btc' ? '#00ff88' : '#a855f7';
+        const gradientStart = coin === 'btc' ? 'rgba(0, 255, 136, 0.3)' : 'rgba(168, 85, 247, 0.3)';
+        const gradientEnd = coin === 'btc' ? 'rgba(0, 255, 136, 0.02)' : 'rgba(168, 85, 247, 0.02)';
+
+        yAxisConfig = {
+          display: true,
+          position: 'right',
+          grid: {
+            color: 'rgba(30, 42, 66, 0.5)',
+            drawBorder: false
+          },
+          ticks: {
+            color: '#6b7a99',
+            font: {
+              family: 'Space Mono',
+              size: 11
+            },
+            callback: (value) => '$' + value.toLocaleString(),
+            maxTicksLimit: 5
+          },
+          border: {
+            display: false
+          }
+        };
+
+        datasets = [{
+          data: data.map(item => ({ x: item.timestamp, y: item.close })),
+          borderColor: color,
+          backgroundColor: (ctx) => {
+            const chart = ctx.chart;
+            const { ctx: canvasCtx, chartArea } = chart;
+            if (!chartArea) return gradientStart;
+            const gradient = canvasCtx.createLinearGradient(0, chartArea.bottom, 0, chartArea.top);
+            gradient.addColorStop(0, gradientEnd);
+            gradient.addColorStop(1, gradientStart);
+            return gradient;
+          },
+          borderWidth: 2.5,
+          fill: true,
+          tension: 0.3,
+          pointRadius: 0,
+          pointHoverRadius: 6,
+          pointHoverBackgroundColor: color,
+          pointHoverBorderColor: '#fff',
+          pointHoverBorderWidth: 2
+        }];
+      }
+
+      const ctx = chartCanvas.getContext('2d');
+
+      if (state.chart) {
+        // Update existing chart with animation
+        state.chart.data.labels = labels;
+        state.chart.data.datasets = datasets;
+        state.chart.options.scales.y = yAxisConfig;
+        
+        // Update tooltip callbacks for compare mode
+        if (view === 'compare') {
+          state.chart.options.plugins.tooltip.callbacks.label = (context) => {
+            const value = context.parsed.y;
+            const sign = value >= 0 ? '+' : '';
+            return `${context.dataset.label}: ${sign}${value.toFixed(2)}%`;
+          };
+        } else {
+          const coin = view;
+          state.chart.options.plugins.tooltip.callbacks.label = (context) => {
+            return formatPrice(context.parsed.y, coin.toUpperCase());
+          };
+        }
+        
+        state.chart.options.plugins.tooltip.callbacks.title = (context) => {
+          return formatDate(context[0].parsed.x, range);
+        };
+        
+        state.chart.update('active');
+      } else {
+        // Create new chart
+        state.chart = new Chart(ctx, {
+          type: 'line',
+          data: {
+            labels: labels,
+            datasets: datasets
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: {
+              duration: 500,
+              easing: 'easeOutQuart'
+            },
+            interaction: {
+              mode: 'index',
+              intersect: false
+            },
+            plugins: {
+              legend: {
+                display: false
+              },
+              tooltip: {
+                enabled: true,
+                backgroundColor: '#131a2a',
+                titleColor: '#6b7a99',
+                bodyColor: '#e8edf5',
+                borderColor: '#1e2a42',
+                borderWidth: 1,
+                padding: 12,
+                displayColors: true,
+                boxWidth: 10,
+                boxHeight: 10,
+                boxPadding: 4,
+                titleFont: {
+                  family: 'Inter',
+                  size: 11
+                },
+                bodyFont: {
+                  family: 'Space Mono',
+                  size: 13,
+                  weight: 'bold'
+                },
+                callbacks: {
+                  title: (context) => formatDate(context[0].parsed.x, range),
+                  label: (context) => {
+                    if (view === 'compare') {
+                      const value = context.parsed.y;
+                      const sign = value >= 0 ? '+' : '';
+                      return `${context.dataset.label}: ${sign}${value.toFixed(2)}%`;
+                    }
+                    return formatPrice(context.parsed.y, view.toUpperCase());
+                  }
+                }
+              }
+            },
+            scales: {
+              x: {
+                display: true,
+                grid: {
+                  display: false
+                },
+                ticks: {
+                  color: '#6b7a99',
+                  font: {
+                    family: 'Inter',
+                    size: 11
+                  },
+                  maxTicksLimit: 6,
+                  callback: function(value, index, values) {
+                    const timestamp = this.getLabelForValue(value);
+                    const date = new Date(timestamp);
+                    
+                    if (range === '1H' || range === '24H') {
+                      return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+                    } else if (range === '7D') {
+                      return date.toLocaleDateString('en-US', { weekday: 'short' });
+                    } else {
+                      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                    }
+                  }
+                },
+                border: {
+                  display: false
+                }
+              },
+              y: yAxisConfig
+            }
+          }
+        });
+      }
+    }
+
+    // Update refresh countdown
+    function updateRefreshCountdown() {
+      if (state.refreshCountdown > 0) {
+        refreshTextEl.textContent = `Updates in ${state.refreshCountdown}s`;
+        state.refreshCountdown--;
+        setTimeout(updateRefreshCountdown, 1000);
+      } else {
+        refreshIndicator.classList.remove('error');
+        Promise.all([
+          fetchCurrentPrice('btc'),
+          fetchCurrentPrice('xmr')
+        ]);
+        state.refreshCountdown = 10;
+        setTimeout(updateRefreshCountdown, 1000);
+      }
+    }
+
+    // Handle toggle button click
+    function handleToggleClick(e) {
+      const button = e.target.closest('.toggle-btn');
+      if (!button) return;
+
+      const view = button.dataset.view;
+      updateView(view);
+    }
+
+    // Handle range button click
+    function handleRangeClick(e) {
+      const button = e.target.closest('.range-btn');
+      if (!button || button.disabled) return;
+
+      const range = button.dataset.range;
+      if (range === state.selectedRange) return;
+
+      // Update active state
+      rangeButtons.forEach(btn => btn.classList.remove('active'));
+      button.classList.add('active');
+
+      // Disable buttons during load
+      rangeButtons.forEach(btn => btn.disabled = true);
+
+      state.selectedRange = range;
+      
+      Promise.all([
+        fetchHistorical('btc', range),
+        fetchHistorical('xmr', range)
+      ]).then(() => {
+        rangeButtons.forEach(btn => btn.disabled = false);
+      });
+    }
+
+    // Handle retry
+    function handleRetry() {
+      showError(false);
+      const range = state.selectedRange;
+      
+      Promise.all([
+        fetchHistorical('btc', range),
+        fetchHistorical('xmr', range)
+      ]);
+    }
+
+    // Initialize
+    async function init() {
+      // Set up event listeners
+      document.querySelector('.view-toggle').addEventListener('click', handleToggleClick);
+      document.querySelector('.range-selector').addEventListener('click', handleRangeClick);
+      retryBtn.addEventListener('click', handleRetry);
+
+      // Initial data fetch
+      showLoading(true);
+      
+      await Promise.all([
+        fetchCurrentPrice('btc'),
+        fetchCurrentPrice('xmr'),
+        fetchHistorical('btc', '24H'),
+        fetchHistorical('xmr', '24H')
+      ]);
+
+      showLoading(false);
+
+      // Enable buttons after initial load
+      rangeButtons.forEach(btn => btn.disabled = false);
+
+      // Update performance comparison
+      updatePerformance();
+
+      // Start auto-refresh countdown
+      updateRefreshCountdown();
+
+      // Set up auto-refresh for prices every 10 seconds
+      setInterval(() => {
+        fetchCurrentPrice('btc');
+        fetchCurrentPrice('xmr');
+      }, 10000);
+
+      // Set up auto-refresh for historical data every 60 seconds
+      setInterval(() => {
+        const range = state.selectedRange;
+        fetchHistorical('btc', range);
+        fetchHistorical('xmr', range);
+      }, 60000);
+
+      // Update last update time
+      setInterval(() => {
+        if (state.lastUpdate) {
+          lastUpdateEl.textContent = `Last updated: ${formatTime(state.lastUpdate)}`;
+        }
+      }, 1000);
+    }
+
+    // Start the app
+    init();
+  </script>
+</body>
+</html>

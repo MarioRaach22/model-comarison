@@ -1,0 +1,945 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HNSW Visualization</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: #1a1a2e;
+  color: #e0e0e0;
+  min-height: 100vh;
+  padding: 20px;
+}
+h1 {
+  text-align: center;
+  color: #00d4ff;
+  margin-bottom: 10px;
+  font-size: 1.5rem;
+}
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 15px;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 15px;
+  padding: 15px;
+  background: #16213e;
+  border-radius: 10px;
+}
+.control-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+}
+label {
+  font-size: 0.85rem;
+  color: #a0a0a0;
+}
+button {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+.btn-primary { background: #00d4ff; color: #1a1a2e; }
+.btn-primary:hover { background: #00a8cc; }
+.btn-secondary { background: #e94560; color: white; }
+.btn-secondary:hover { background: #c73e54; }
+.btn-muted { background: #374151; color: white; }
+.btn-muted:hover { background: #4b5563; }
+input[type="range"] {
+  width: 120px;
+  accent-color: #00d4ff;
+}
+input[type="number"] {
+  width: 60px;
+  padding: 5px;
+  border: 1px solid #374151;
+  border-radius: 4px;
+  background: #1a1a2e;
+  color: #e0e0e0;
+}
+.stats {
+  display: flex;
+  gap: 20px;
+  justify-content: center;
+  margin-bottom: 15px;
+  flex-wrap: wrap;
+}
+.stat-box {
+  background: #16213e;
+  padding: 10px 20px;
+  border-radius: 8px;
+  text-align: center;
+}
+.stat-value {
+  font-size: 1.5rem;
+  font-weight: bold;
+  color: #00d4ff;
+}
+.stat-label { font-size: 0.75rem; color: #a0a0a0; margin-top: 3px; }
+.recall-good { color: #10b981; }
+.recall-bad { color: #ef4444; }
+.layer-tabs {
+  display: flex;
+  gap: 5px;
+  justify-content: center;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+.tab-btn {
+  padding: 8px 16px;
+  background: #374151;
+  border: 2px solid transparent;
+  border-radius: 5px 5px 0 0;
+}
+.tab-btn.active { background: #00d4ff; color: #1a1a2e; }
+.tab-btn:hover:not(.active) { background: #4b5563; }
+.canvas-container {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  align-items: center;
+}
+canvas {
+  background: #0f0f1a;
+  border: 2px solid #374151;
+  border-radius: 10px;
+  cursor: crosshair;
+}
+#legend {
+  display: flex;
+  gap: 20px;
+  justify-content: center;
+  flex-wrap: wrap;
+  padding: 10px;
+  background: #16213e;
+  border-radius: 8px;
+  margin-top: 15px;
+}
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+}
+.legend-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+.legend-line {
+  width: 24px;
+  height: 2px;
+}
+#missed-list {
+  margin-top: 10px;
+  padding: 10px;
+  background: #16213e;
+  border-radius: 8px;
+  max-height: 100px;
+  overflow-y: auto;
+}
+#missed-list:empty { display: none; }
+.missed-item {
+  display: inline-block;
+  padding: 3px 8px;
+  margin: 3px;
+  background: #ef444433;
+  border: 1px solid #ef4444;
+  border-radius: 4px;
+  font-size: 0.8rem;
+}
+.hidden { display: none; }
+</style>
+</head>
+<body>
+<h1>HNSW Visualization</h1>
+
+<div class="controls">
+  <div class="control-group">
+    <label>M (max connections)</label>
+    <div style="display:flex;gap:5px">
+      <button class="btn-muted" onclick="rebuildIndex(4)">M=4</button>
+      <button class="btn-primary" onclick="rebuildIndex(8)">M=8</button>
+      <button class="btn-muted" onclick="rebuildIndex(16)">M=16</button>
+    </div>
+  </div>
+  <div class="control-group">
+    <label>efConstruction</label>
+    <input type="number" id="efConstruction" value="64" min="1" max="256">
+  </div>
+  <div class="control-group">
+    <label>efSearch</label>
+    <input type="range" id="efSearch" min="1" max="100" value="50">
+    <span id="efSearchVal">50</span>
+  </div>
+  <div class="control-group">
+    <label>Animation Speed (ms)</label>
+    <input type="range" id="animSpeed" min="10" max="500" value="100">
+    <span id="animSpeedVal">100</span>
+  </div>
+  <div class="control-group">
+    <button class="btn-primary" onclick="insertMorePoints()">Insert 100 Points</button>
+  </div>
+  <div class="control-group">
+    <button class="btn-secondary" onclick="resetIndex()">Reset</button>
+  </div>
+</div>
+
+<div class="stats">
+  <div class="stat-box">
+    <div class="stat-value" id="pointCount">300</div>
+    <div class="stat-label">Points</div>
+  </div>
+  <div class="stat-box">
+    <div class="stat-value" id="layerCount">0</div>
+    <div class="stat-label">Layers</div>
+  </div>
+  <div class="stat-box">
+    <div class="stat-value" id="currentM">8</div>
+    <div class="stat-label">M</div>
+  </div>
+  <div class="stat-box">
+    <div class="stat-value" id="recallVal">-</div>
+    <div class="stat-label">Recall@10</div>
+  </div>
+  <div class="stat-box">
+    <div class="stat-value" id="distCompHNSW">0</div>
+    <div class="stat-label">HNSW Dist Computations</div>
+  </div>
+  <div class="stat-box">
+    <div class="stat-value" id="distCompBrute">0</div>
+    <div class="stat-label">Brute Force Computations</div>
+  </div>
+</div>
+
+<div class="layer-tabs" id="layerTabs"></div>
+
+<div class="canvas-container" id="canvasContainer"></div>
+
+<div id="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:#00d4ff"></div>Node</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#4a4a6a"></div>Query Point</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#f59e0b"></div>Visited Candidates</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#10b981"></div>K Nearest (Found)</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#ef4444"></div>K Nearest (Missed)</div>
+  <div class="legend-item"><div class="legend-line" style="background:#3b82f6"></div>Edge</div>
+  <div class="legend-item"><div class="legend-line" style="background:#f59e0b"></div>Search Path</div>
+</div>
+
+<div id="missed-list" class="hidden">
+  <strong>Missed true neighbors:</strong>
+  <div id="missed-items"></div>
+</div>
+
+<script>
+// HNSW Implementation
+class HNSW {
+  constructor(M = 8, efConstruction = 64) {
+    this.M = M;
+    this.efConstruction = efConstruction;
+    this.mL = 1.0 / Math.log(M);
+    this.maxLevel = 0;
+    this.entryPoint = null;
+    this.nodes = [];
+    this.distComps = 0;
+  }
+
+  l2Distance(a, b) {
+    this.distComps++;
+    const dx = a.x - b.x;
+    const dy = a.y - b.y;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+
+  getRandomLevel() {
+    let l = 0;
+    while (Math.random() < 0.5 && l < 100) {
+      l++;
+    }
+    return l;
+  }
+
+  insert(point) {
+    const level = this.getRandomLevel();
+    const node = {
+      id: this.nodes.length,
+      point: { ...point },
+      level: level,
+      neighbors: []
+    };
+
+    for (let i = 0; i <= level; i++) {
+      node.neighbors[i] = [];
+    }
+
+    if (this.entryPoint === null) {
+      this.maxLevel = level;
+      this.entryPoint = node;
+      this.nodes.push(node);
+      return node;
+    }
+
+    let current = this.entryPoint;
+    const visited = new Set();
+    const searchLayers = [];
+
+    for (let l = this.maxLevel; l > level; l--) {
+      const layerPath = [];
+      let bestDist = this.l2Distance(point, current.point);
+      let best = current;
+
+      if (!visited.has(current.id)) {
+        visited.add(current.id);
+        layerPath.push(current);
+      }
+
+      let changed = true;
+      while (changed) {
+        changed = false;
+        for (const neighbor of current.neighbors[l] || []) {
+          if (visited.has(neighbor.id)) continue;
+          visited.add(neighbor.id);
+          layerPath.push(neighbor);
+
+          const dist = this.l2Distance(point, neighbor.point);
+          if (dist < bestDist) {
+            bestDist = dist;
+            best = neighbor;
+            changed = true;
+          }
+        }
+        if (changed) current = best;
+      }
+      searchLayers[l] = layerPath;
+      current = best;
+    }
+
+    for (let l = level; l >= 0; l--) {
+      const layerPath = searchLayers[l] || [];
+      if (!visited.has(current.id)) {
+        visited.add(current.id);
+        layerPath.push(current);
+      }
+
+      let changed = true;
+      while (changed) {
+        changed = false;
+        const neighbors = current.neighbors[l] || [];
+        for (const neighbor of neighbors) {
+          if (visited.has(neighbor.id)) continue;
+          visited.add(neighbor.id);
+          layerPath.push(neighbor);
+
+          const dist = this.l2Distance(point, neighbor.point);
+          const bestDist = this.l2Distance(point, current.point);
+          if (dist < bestDist) {
+            current = neighbor;
+            changed = true;
+          }
+        }
+      }
+
+      const candidates = this.selectBestNeighbors([...layerPath, current], this.efConstruction, point);
+      const neighborsL = this.selectBestNeighbors(candidates, this.M, point);
+      node.neighbors[l].push(...neighborsL.filter(n => n.id !== node.id));
+
+      for (const neighbor of neighborsL) {
+        if (neighbor.id !== node.id) {
+          neighbor.neighbors[l] = neighbor.neighbors[l] || [];
+          if (!neighbor.neighbors[l].some(n => n.id === node.id)) {
+            neighbor.neighbors[l].push(node);
+          }
+          if (neighbor.neighbors[l].length > this.M) {
+            neighbor.neighbors[l] = this.selectBestNeighbors(neighbor.neighbors[l], this.M, neighbor.point);
+          }
+        }
+      }
+
+      if (l === 0) {
+        searchLayers[0] = layerPath;
+      }
+      current = candidates[0];
+    }
+
+    if (level > this.maxLevel) {
+      this.maxLevel = level;
+      this.entryPoint = node;
+    }
+
+    this.nodes.push(node);
+    return node;
+  }
+
+  selectBestNeighbors(nodes, m, query) {
+    const withDist = nodes.map(n => ({
+      node: n,
+      dist: this.l2Distance(query, n.point)
+    }));
+    withDist.sort((a, b) => a.dist - b.dist);
+    return withDist.slice(0, m).map(x => x.node);
+  }
+
+  searchLayer(query, targetLevel, ef, returnPath = false) {
+    let current = this.entryPoint;
+    const visited = new Set([current.id]);
+    const candidates = [{ node: current, dist: this.l2Distance(query, current.point) }];
+    const visitedList = returnPath ? [current] : null;
+
+    while (candidates.length > 0) {
+      candidates.sort((a, b) => a.dist - b.dist);
+      const candidate = candidates.shift();
+
+      if (candidate.dist > (returnPath ? this.worstDist(query, candidates) : candidate.dist)) {
+        break;
+      }
+
+      const neighbors = candidate.node.neighbors[targetLevel] || [];
+      let foundBetter = false;
+
+      for (const neighbor of neighbors) {
+        if (!visited.has(neighbor.id)) {
+          visited.add(neighbor.id);
+          if (returnPath) visitedList.push(neighbor);
+
+          const dist = this.l2Distance(query, neighbor.point);
+          candidates.push({ node: neighbor, dist });
+
+          if (dist < candidate.dist) {
+            foundBetter = true;
+          }
+        }
+      }
+    }
+
+    const results = [...visited];
+    const resultDist = {};
+    for (const id of results) {
+      const node = this.nodes[id];
+      resultDist[id] = this.l2Distance(query, node.point);
+    }
+
+    results.sort((a, b) => resultDist[a] - resultDist[b]);
+    const k = Math.min(ef, results.length);
+
+    if (returnPath) {
+      return {
+        results: results.slice(0, k).map(id => this.nodes[id]),
+        visited: visitedList,
+        distances: resultDist
+      };
+    }
+    return results.slice(0, k).map(id => this.nodes[id]);
+  }
+
+  worstDist(query, candidates) {
+    if (candidates.length === 0) return Infinity;
+    return Math.max(...candidates.map(c => c.dist));
+  }
+
+  search(query, ef, k) {
+    let current = this.entryPoint;
+    let bestDist = this.l2Distance(query, current.point);
+
+    for (let l = this.maxLevel; l > 0; l--) {
+      const results = this.searchLayer(query, l, 1, false);
+      if (results.length > 0) {
+        const dist = this.l2Distance(query, results[0].point);
+        if (dist < bestDist) {
+          bestDist = dist;
+          current = results[0];
+        }
+      }
+    }
+
+    const { results, visited, distances } = this.searchLayer(query, 0, ef, true);
+    return { results: results.slice(0, k), visited, distances };
+  }
+}
+
+// Global state
+let hnsw = null;
+let canvases = [];
+let layerTabs = [];
+let currentLayer = 0;
+let animationId = null;
+let searchAnimation = null;
+let isAnimating = false;
+
+const COLORS = {
+  node: '#00d4ff',
+  nodeOutline: '#0088aa',
+  query: '#4a4a6a',
+  queryOutline: '#2a2a4a',
+  visited: '#f59e0b',
+  found: '#10b981',
+  missed: '#ef4444',
+  edge: '#3b82f6',
+  edgeOutline: '#1e40af',
+  searchPath: '#f59e0b',
+  entry: '#ec4899',
+  missOutline: '#ff0000'
+};
+
+function initHNSW(numPoints = 300, M = 8, efConstruction = 64) {
+  hnsw = new HNSW(M, efConstruction);
+  const width = 800;
+  const height = 400;
+  const margin = 30;
+
+  for (let i = 0; i < numPoints; i++) {
+    const x = margin + Math.random() * (width - 2 * margin);
+    const y = margin + Math.random() * (height - 2 * margin);
+    hnsw.insert({ x, y });
+  }
+
+  updateStats();
+  setupCanvases();
+}
+
+function setupCanvases() {
+  const container = document.getElementById('canvasContainer');
+  container.innerHTML = '';
+  canvases = [];
+  layerTabs = [];
+
+  const numLayers = hnsw.maxLevel + 1;
+
+  const tabsContainer = document.getElementById('layerTabs');
+  tabsContainer.innerHTML = '';
+
+  for (let l = 0; l < numLayers; l++) {
+    const btn = document.createElement('button');
+    btn.className = 'tab-btn' + (l === 0 ? ' active' : '');
+    btn.textContent = `Layer ${l}`;
+    btn.onclick = () => showLayer(l);
+    tabsContainer.appendChild(btn);
+    layerTabs.push(btn);
+  }
+
+  if (numLayers <= 5) {
+    for (let l = numLayers - 1; l >= 0; l--) {
+      const canvas = createCanvas(l);
+      container.appendChild(canvas);
+      canvases[l] = canvas;
+    }
+    drawAllLayers();
+  } else {
+    for (let l = 0; l < numLayers; l++) {
+      if (l === 0) {
+        const canvas = createCanvas(l);
+        container.appendChild(canvas);
+        canvases[l] = canvas;
+      } else {
+        canvases[l] = null;
+      }
+    }
+    showLayer(0);
+  }
+
+  document.getElementById('layerCount').textContent = numLayers;
+}
+
+function createCanvas(layer) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 800;
+  canvas.height = 400;
+  canvas.id = `canvas-layer-${layer}`;
+  canvas.addEventListener('click', handleCanvasClick);
+  return canvas;
+}
+
+function showLayer(l) {
+  layerTabs.forEach((btn, i) => {
+    btn.classList.toggle('active', i === l);
+  });
+  currentLayer = l;
+
+  const container = document.getElementById('canvasContainer');
+  container.innerHTML = '';
+
+  if (l >= canvases.length || !canvases[l]) {
+    const canvas = createCanvas(l);
+    container.appendChild(canvas);
+    canvases[l] = canvas;
+    drawLayer(l);
+  } else {
+    container.appendChild(canvases[l]);
+    drawLayer(l);
+  }
+}
+
+function drawAllLayers() {
+  for (let l = 0; l <= hnsw.maxLevel; l++) {
+    if (canvases[l]) {
+      drawLayer(l);
+    }
+  }
+}
+
+function drawLayer(layer, options = {}) {
+  const canvas = canvases[layer];
+  if (!canvas) return;
+
+  const ctx = canvas.getContext('2d');
+  const width = canvas.width;
+  const height = canvas.height;
+
+  ctx.fillStyle = '#0f0f1a';
+  ctx.fillRect(0, 0, width, height);
+
+  const { visited = [], found = [], missed = [], queryPoint = null, searchPath = [], searchDist = {} } = options;
+
+  const visitedSet = new Set(visited.map(n => n.id));
+  const foundSet = new Set(found.map(n => n.id));
+  const missedSet = new Set(missed.map(n => n.id));
+  const searchPathSet = new Set(searchPath.map(n => n.id));
+
+  ctx.lineWidth = 1.5;
+  for (const node of hnsw.nodes) {
+    const neighbors = node.neighbors[layer] || [];
+    for (const neighbor of neighbors) {
+      if (neighbor.level >= layer) {
+        const isPath = searchPathSet.has(node.id) && searchPathSet.has(neighbor.id);
+        ctx.strokeStyle = isPath ? COLORS.searchPath : COLORS.edge;
+        ctx.lineWidth = isPath ? 2 : 1;
+        ctx.beginPath();
+        ctx.moveTo(node.point.x, node.point.y);
+        ctx.lineTo(neighbor.point.x, neighbor.point.y);
+        ctx.stroke();
+      }
+    }
+  }
+
+  for (const node of hnsw.nodes) {
+    if (node.level < layer) continue;
+
+    let color = COLORS.node;
+    let outline = COLORS.nodeOutline;
+    let radius = 4;
+
+    if (foundSet.has(node.id)) {
+      color = COLORS.found;
+      outline = '#059669';
+      radius = 6;
+    } else if (missedSet.has(node.id)) {
+      color = COLORS.missed;
+      outline = COLORS.missOutline;
+      radius = 6;
+    } else if (visitedSet.has(node.id)) {
+      color = COLORS.visited;
+      outline = '#d97706';
+      radius = 5;
+    }
+
+    if (node === hnsw.entryPoint && layer === hnsw.maxLevel) {
+      ctx.beginPath();
+      ctx.arc(node.point.x, node.point.y, 10, 0, 2 * Math.PI);
+      ctx.strokeStyle = COLORS.entry;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+
+    ctx.beginPath();
+    ctx.arc(node.point.x, node.point.y, radius, 0, 2 * Math.PI);
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.strokeStyle = outline;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    if (searchPathSet.has(node.id) && layer === 0) {
+      ctx.beginPath();
+      ctx.arc(node.point.x, node.point.y, radius + 4, 0, 2 * Math.PI);
+      ctx.strokeStyle = COLORS.searchPath + '66';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+  }
+
+  if (queryPoint) {
+    ctx.beginPath();
+    ctx.arc(queryPoint.x, queryPoint.y, 8, 0, 2 * Math.PI);
+    ctx.fillStyle = COLORS.query;
+    ctx.fill();
+    ctx.strokeStyle = COLORS.queryOutline;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+}
+
+function handleCanvasClick(e) {
+  if (isAnimating) return;
+
+  const canvas = e.target;
+  const rect = canvas.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+
+  runSearch({ x, y });
+}
+
+async function runSearch(queryPoint) {
+  const efSearch = parseInt(document.getElementById('efSearch').value);
+  const animSpeed = parseInt(document.getElementById('animSpeed').value);
+  const k = 10;
+
+  hnsw.distComps = 0;
+  const hnswCompsStart = hnsw.distComps;
+
+  const { results, visited, distances } = hnsw.search(queryPoint, efSearch, k);
+
+  const hnswComps = hnsw.distComps - hnswCompsStart;
+
+  let bruteComps = 0;
+  const startBrute = () => { bruteComps = 0; };
+  const origL2 = hnsw.l2Distance.bind(hnsw);
+  hnsw.l2Distance = function(a, b) {
+    bruteComps++;
+    return origL2(a, b);
+  };
+
+  const allPoints = [...hnsw.nodes];
+  const withDist = allPoints.map(n => ({
+    node: n,
+    dist: origL2(queryPoint, n.point)
+  }));
+  withDist.sort((a, b) => a.dist - b.dist);
+  const trueNearest = withDist.slice(0, k);
+
+  hnsw.l2Distance = origL2;
+
+  const foundSet = new Set(results.map(n => n.id));
+  const trueSet = new Set(trueNearest.map(n => n.node.id));
+
+  const found = results.filter(n => trueSet.has(n.id));
+  const missed = trueNearest.filter(n => !foundSet.has(n.node.id));
+
+  const recall = found.length / k;
+
+  document.getElementById('distCompHNSW').textContent = hnswComps;
+  document.getElementById('distCompBrute').textContent = bruteComps;
+  document.getElementById('recallVal').textContent = recall.toFixed(3);
+  document.getElementById('recallVal').className = 'stat-value ' + (recall === 1 ? 'recall-good' : 'recall-bad');
+
+  const missedList = document.getElementById('missed-list');
+  const missedItems = document.getElementById('missed-items');
+  if (recall < 1 && missed.length > 0) {
+    missedList.classList.remove('hidden');
+    missedItems.innerHTML = missed.map(n => 
+      `<span class="missed-item">#${n.node.id} (dist: ${n.dist.toFixed(2)})</span>`
+    ).join('');
+  } else {
+    missedList.classList.add('hidden');
+  }
+
+  if (canvases.length <= 5) {
+    await animateAllLayers(queryPoint, visited, found, missed, animSpeed);
+  } else {
+    await animateCurrentLayer(queryPoint, visited, found, missed, animSpeed);
+  }
+}
+
+async function animateAllLayers(queryPoint, visited, found, missed, speed) {
+  isAnimating = true;
+
+  for (let layer = 0; layer <= hnsw.maxLevel; layer++) {
+    if (canvases[layer]) {
+      drawLayer(layer, {
+        queryPoint,
+        searchPath: [],
+        visited: [],
+        found: [],
+        missed: [],
+        searchDist: {}
+      });
+      await sleep(speed / 3);
+    }
+  }
+
+  const entryPath = [];
+  let current = hnsw.entryPoint;
+  entryPath.push(current);
+  for (let l = hnsw.maxLevel; l > 0; l--) {
+    const layerVisited = visited.filter(n => n.level >= l);
+    const layerResults = hnsw.searchLayer(queryPoint, l, 1, false);
+    if (layerResults.length > 0) {
+      current = layerResults[0];
+      entryPath.push(current);
+    }
+
+    if (canvases[l]) {
+      drawLayer(l, {
+        queryPoint,
+        searchPath: entryPath.filter(n => n.level >= l),
+        visited: [],
+        found: [],
+        missed: [],
+        searchDist: {}
+      });
+      await sleep(speed);
+    }
+  }
+
+  const layer0Visited = visited.filter(n => n.level >= 0);
+  for (let i = 0; i < layer0Visited.length; i++) {
+    drawLayer(0, {
+      queryPoint,
+      searchPath: [],
+      visited: layer0Visited.slice(0, i + 1),
+      found: [],
+      missed: [],
+      searchDist: {}
+    });
+    await sleep(speed / 10);
+  }
+
+  drawLayer(0, {
+    queryPoint,
+    searchPath: [],
+    visited: layer0Visited,
+    found: found,
+    missed: missed,
+    searchDist: {}
+  });
+
+  isAnimating = false;
+}
+
+async function animateCurrentLayer(queryPoint, visited, found, missed, speed) {
+  isAnimating = true;
+
+  drawLayer(currentLayer, {
+    queryPoint,
+    searchPath: [],
+    visited: [],
+    found: [],
+    missed: [],
+    searchDist: {}
+  });
+  await sleep(speed / 2);
+
+  const layerVisited = visited.filter(n => n.level >= currentLayer);
+  for (let i = 0; i < layerVisited.length; i++) {
+    drawLayer(currentLayer, {
+      queryPoint,
+      searchPath: [],
+      visited: layerVisited.slice(0, i + 1),
+      found: [],
+      missed: [],
+      searchDist: {}
+    });
+    await sleep(speed / 10);
+  }
+
+  drawLayer(currentLayer, {
+    queryPoint,
+    searchPath: [],
+    visited: layerVisited,
+    found: found,
+    missed: missed,
+    searchDist: {}
+  });
+
+  isAnimating = false;
+}
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function updateStats() {
+  document.getElementById('pointCount').textContent = hnsw.nodes.length;
+  document.getElementById('layerCount').textContent = hnsw.maxLevel + 1;
+  document.getElementById('currentM').textContent = hnsw.M;
+}
+
+function rebuildIndex(M) {
+  const efConstruction = parseInt(document.getElementById('efConstruction').value) || 64;
+  const pointCount = hnsw.nodes.length;
+  hnsw = new HNSW(M, efConstruction);
+
+  const points = [];
+  for (let i = 0; i < pointCount; i++) {
+    points.push({ x: 30 + Math.random() * 740, y: 30 + Math.random() * 340 });
+  }
+
+  for (const point of points) {
+    hnsw.insert(point);
+  }
+
+  updateStats();
+  setupCanvases();
+
+  document.querySelectorAll('.btn-muted').forEach(btn => {
+    if (btn.textContent === `M=${M}`) {
+      btn.classList.remove('btn-muted');
+      btn.classList.add('btn-primary');
+    } else {
+      btn.classList.remove('btn-primary');
+      btn.classList.add('btn-muted');
+    }
+  });
+
+  resetResults();
+}
+
+function insertMorePoints() {
+  const count = 100;
+  for (let i = 0; i < count; i++) {
+    const x = 30 + Math.random() * 740;
+    const y = 30 + Math.random() * 340;
+    hnsw.insert({ x, y });
+  }
+  updateStats();
+  setupCanvases();
+  resetResults();
+}
+
+function resetIndex() {
+  const M = parseInt(document.getElementById('currentM').textContent) || 8;
+  const efConstruction = parseInt(document.getElementById('efConstruction').value) || 64;
+  initHNSW(300, M, efConstruction);
+  resetResults();
+}
+
+function resetResults() {
+  document.getElementById('recallVal').textContent = '-';
+  document.getElementById('recallVal').className = 'stat-value';
+  document.getElementById('distCompHNSW').textContent = '0';
+  document.getElementById('distCompBrute').textContent = '0';
+  document.getElementById('missed-list').classList.add('hidden');
+
+  if (canvases.length <= 5) {
+    drawAllLayers();
+  } else {
+    drawLayer(currentLayer);
+  }
+}
+
+document.getElementById('efSearch').addEventListener('input', function() {
+  document.getElementById('efSearchVal').textContent = this.value;
+});
+
+document.getElementById('animSpeed').addEventListener('input', function() {
+  document.getElementById('animSpeedVal').textContent = this.value;
+});
+
+document.getElementById('efConstruction').addEventListener('change', function() {
+  rebuildIndex(hnsw.M);
+});
+
+window.addEventListener('load', () => {
+  initHNSW(300, 8, 64);
+});
+</script>
+</body>
+</html>

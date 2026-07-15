@@ -1,0 +1,890 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>World Language Explorer</title>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/topojson-client@3"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: #0f172a;
+    color: #e2e8f0;
+    overflow: hidden;
+    height: 100vh;
+  }
+  #header {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+    background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+    border-bottom: 1px solid #334155; padding: 12px 20px;
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    backdrop-filter: blur(10px);
+  }
+  #header h1 {
+    font-size: 1.3rem; font-weight: 700;
+    background: linear-gradient(135deg, #60a5fa, #a78bfa);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    white-space: nowrap;
+  }
+  #search-box { position: relative; flex-shrink: 0; }
+  #search-box input {
+    background: #1e293b; border: 1px solid #475569; border-radius: 8px;
+    padding: 8px 14px 8px 36px; color: #e2e8f0; font-size: 0.9rem;
+    width: 260px; outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  #search-box input:focus {
+    border-color: #60a5fa;
+    box-shadow: 0 0 0 3px rgba(96,165,250,0.15);
+  }
+  #search-box .icon {
+    position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+    color: #64748b; font-size: 14px;
+  }
+  #search-results {
+    position: absolute; top: calc(100% + 4px); left: 0; right: 0;
+    background: #1e293b; border: 1px solid #475569; border-radius: 8px;
+    max-height: 260px; overflow-y: auto; display: none; z-index: 200;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.4);
+  }
+  #search-results .result-item {
+    padding: 8px 14px; cursor: pointer;
+    border-bottom: 1px solid #334155;
+    transition: background 0.15s; font-size: 0.88rem;
+  }
+  #search-results .result-item:hover { background: #334155; }
+  #search-results .result-item:last-child { border-bottom: none; }
+  .header-btn {
+    background: #1e293b; border: 1px solid #475569; color: #e2e8f0;
+    border-radius: 8px; padding: 8px 14px; font-size: 0.88rem;
+    cursor: pointer; transition: all 0.2s; display: flex; align-items: center; gap: 6px;
+    white-space: nowrap;
+  }
+  .header-btn:hover { background: #334155; border-color: #60a5fa; }
+  .header-btn.active { background: #1d4ed8; border-color: #60a5fa; }
+  #controls-right { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+  #map-container { width: 100%; height: 100vh; padding-top: 60px; }
+  #map-svg { width: 100%; height: 100%; cursor: grab; }
+  #map-svg:active { cursor: grabbing; }
+  .country-path {
+    stroke: #1e293b; stroke-width: 0.5px; cursor: pointer;
+    transition: stroke 0.15s, stroke-width 0.15s;
+  }
+  .country-path:hover { stroke: #f8fafc; stroke-width: 1.5px; }
+  .country-path.selected { stroke: #fbbf24; stroke-width: 2.5px; }
+  .country-path.no-data { fill: #1e293b !important; }
+  #tooltip {
+    position: fixed; pointer-events: none;
+    background: rgba(15, 23, 42, 0.95); border: 1px solid #475569;
+    border-radius: 8px; padding: 8px 14px; font-size: 0.88rem; color: #f1f5f9;
+    z-index: 300; display: none; backdrop-filter: blur(8px);
+    box-shadow: 0 4px 20px rgba(0,0,0,0.4); max-width: 250px;
+  }
+  #tooltip .tt-name { font-weight: 600; font-size: 0.95rem; margin-bottom: 2px; }
+  #info-panel {
+    position: fixed; right: -420px; top: 60px; bottom: 0; width: 400px;
+    background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
+    border-left: 1px solid #334155; z-index: 150;
+    transition: right 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+    overflow-y: auto;
+    box-shadow: -5px 0 30px rgba(0,0,0,0.3);
+  }
+  #info-panel.open { right: 0; }
+  #panel-close {
+    position: absolute; top: 14px; right: 14px;
+    background: #334155; border: none; color: #e2e8f0;
+    width: 32px; height: 32px; border-radius: 50%;
+    cursor: pointer; font-size: 1.1rem;
+    display: flex; align-items: center; justify-content: center;
+    transition: background 0.2s;
+  }
+  #panel-close:hover { background: #475569; }
+  .panel-content { padding: 24px; }
+  .panel-country-name {
+    font-size: 1.5rem; font-weight: 700; margin-bottom: 4px;
+    background: linear-gradient(135deg, #60a5fa, #a78bfa);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .panel-subtitle {
+    color: #94a3b8; font-size: 0.85rem; margin-bottom: 20px;
+    padding-bottom: 16px; border-bottom: 1px solid #334155;
+  }
+  .lang-section { margin-bottom: 20px; }
+  .lang-section h3 {
+    font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.08em;
+    color: #94a3b8; margin-bottom: 10px; display: flex; align-items: center; gap: 8px;
+  }
+  .lang-section h3 .badge {
+    font-size: 0.7rem; padding: 2px 8px; border-radius: 10px;
+    text-transform: none; letter-spacing: 0;
+  }
+  .badge-official { background: #065f46; color: #6ee7b7; }
+  .badge-widely { background: #78350f; color: #fcd34d; }
+  .lang-item {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 10px 14px; background: #0f172a; border-radius: 8px;
+    margin-bottom: 6px; border: 1px solid #1e293b;
+  }
+  .lang-name { font-weight: 500; }
+  .lang-family {
+    font-size: 0.8rem; padding: 3px 10px; border-radius: 12px;
+    background: #1e3a5f; color: #93c5fd; font-weight: 500;
+  }
+  .no-data-text { text-align: center; padding: 40px 20px; color: #64748b; }
+  .no-data-text .icon { font-size: 3rem; margin-bottom: 12px; }
+  .no-data-text p { font-size: 0.95rem; }
+  .no-data-text p.sub { font-size: 0.85rem; color: #475569; margin-top: 8px; }
+  #legend {
+    position: fixed; bottom: 20px; left: 20px;
+    background: rgba(15, 23, 42, 0.95); border: 1px solid #334155;
+    border-radius: 12px; padding: 16px 20px; z-index: 150;
+    display: none; backdrop-filter: blur(10px); max-height: 70vh;
+    overflow-y: auto; box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+  }
+  #legend.visible { display: block; }
+  #legend h3 {
+    font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.08em;
+    color: #94a3b8; margin-bottom: 12px;
+  }
+  .legend-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 4px 0; font-size: 0.88rem;
+  }
+  .legend-color {
+    width: 18px; height: 18px; border-radius: 4px;
+    flex-shrink: 0; border: 1px solid rgba(255,255,255,0.1);
+  }
+  #loading {
+    position: fixed; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; background: #0f172a; z-index: 500;
+    transition: opacity 0.5s;
+  }
+  #loading.hidden { opacity: 0; pointer-events: none; }
+  .spinner {
+    width: 48px; height: 48px; border: 4px solid #334155;
+    border-top-color: #60a5fa; border-radius: 50%;
+    animation: spin 0.8s linear infinite; margin-bottom: 16px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #loading p { color: #94a3b8; font-size: 0.95rem; }
+  .zoom-controls {
+    position: fixed; bottom: 20px; right: 20px;
+    display: flex; flex-direction: column; gap: 4px; z-index: 100;
+  }
+  .zoom-btn {
+    width: 36px; height: 36px; background: rgba(30, 41, 59, 0.9);
+    border: 1px solid #475569; color: #e2e8f0; border-radius: 8px;
+    cursor: pointer; font-size: 1.2rem;
+    display: flex; align-items: center; justify-content: center;
+    transition: background 0.2s;
+  }
+  .zoom-btn:hover { background: #334155; }
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #475569; }
+</style>
+</head>
+<body>
+
+<div id="loading">
+  <div class="spinner"></div>
+  <p>Loading world map…</p>
+</div>
+
+<div id="header">
+  <h1>🌍 Language Explorer</h1>
+  <div id="search-box">
+    <span class="icon">🔍</span>
+    <input type="text" id="search-input" placeholder="Search countries…" autocomplete="off">
+    <div id="search-results"></div>
+  </div>
+  <div id="controls-right">
+    <button class="header-btn" id="toggle-color" title="Color by language family">
+      🎨 Color Map
+    </button>
+    <button class="header-btn" id="reset-zoom" title="Reset view">
+      🏠 Reset
+    </button>
+  </div>
+</div>
+
+<div id="map-container">
+  <svg id="map-svg"></svg>
+</div>
+
+<div id="tooltip">
+  <div class="tt-name"></div>
+  <div class="tt-sub"></div>
+</div>
+
+<div id="info-panel">
+  <button id="panel-close">✕</button>
+  <div class="panel-content" id="panel-body"></div>
+</div>
+
+<div id="legend"></div>
+
+<div class="zoom-controls">
+  <button class="zoom-btn" id="zoom-in">+</button>
+  <button class="zoom-btn" id="zoom-out">−</button>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════
+// LANGUAGE DATA — ISO 3166-1 numeric codes → country info
+// ═══════════════════════════════════════════════════════════
+const LANG_DATA = {
+// ─── Africa ───
+"012":{name:"Argentina",official:[{name:"Spanish",family:"Indo-European (Romance)",widely:false}],widely:[{name:"Italian",family:"Indo-European (Romance)",widely:true},{name:"Guaraní",family:"Tupian",widely:true},{name:"German",family:"Indo-European (Germanic)",widely:true}]},
+"024":{name:"Benin",official:[{name:"French",family:"Indo-European (Romance)",widely:false}],widely:[{name:"Fon",family:"Niger-Congo (Gbe)",widely:true},{name:"Yoruba",family:"Niger-Congo (Yoruboid)",widely:true}]},
+"072":{name:"Botswana",official:[{name:"English",family:"Indo-European (Germanic)",widely:false},{name:"Tswana",family:"Niger-Congo (Bantu)",widely:false}],widely:[]},
+"108":{name:"Burundi",official:[{name:"Kirundi",family:"Niger-Congo (Bantu)",widely:false},{name:"French",family:"Indo-European (Romance)",widely:false},{name:"English",family:"Indo-European (Germanic)",widely:false}],widely:[]},
+"120":{name:"Cameroon",official:[{name:"French",family:"Indo-European (Romance)",widely:false},{name:"English",family:"Indo-European (Germanic)",widely:false}],widely:[{name:"Fulfulde",family:"Niger-Congo (Atlantic)",widely:true},{name:"Ewondo",family:"Niger-Congo (Bantu)",widely:true},{name:"Bamileke",family:"Niger-Congo (Bantu)",widely:true}]},
+"132":{name:"Cabo Verde",official:[{name:"Portuguese",family:"Indo-European (Romance)",widely:false}],widely:[{name:"Cabo Verdean Creole",family:"Portuguese-based creole",widely:true}]},
+"140":{name:"Central African Rep.",official:[{name:"French",family:"Indo-European (Romance)",widely:false},{name:"Sango",family:"Niger-Congo",widely:false}],widely:[]},
+"144":{name:"Sri Lanka",official:[{name:"Sinhala",family:"Indo-European (Indo-Aryan)",widely:false},{name:"Tamil",family:"Dravidian",widely:false}],widely:[{name:"English",family:"Indo-European (Germanic)",widely:true}]},
+"148":{name:"Chad",official:[{name:"Arabic",family:"Afro-Asiatic (Semitic)",widely:false},{name:"French",family:"Indo-European (Romance)",widely:false}],widely:[{name:"Sara",family:"Niger-Congo (Mande)",widely:true}]},
+"152":{name:"Chile",official:[{name:"Spanish",family:"Indo-European (Romance)",widely:false}],widely:[{name:"Mapudungun",family:"Isolate",widely:true}]},
+"156":{name:"China",official:[{name:"Mandarin Chinese",family:"Sino-Tibetan",widely:false}],widely:[{name:"Cantonese",family:"Sino-Tibetan",widely:true},{name:"Mongolian",family:"Mongolic",widely:true},{name:"Tibetan",family:"Sino-Tibetan",widely:true},{name:"Uyghur",family:"Turkic",widely:true}]},
+"178":{name:"Congo",official:[{name:"French",family:"Indo-European (Romance)",widely:false}],widely:[{name:"Lingala",family:"Niger-Congo (Bantu)",widely:true},{name:"Kikongo",family:"Niger-Congo (Bantu)",widely:true}]},
+"180":{name:"Dem. Rep. Congo",official:[{name:"French",family:"Indo-European (Romance)",widely:false}],widely:[{name:"Lingala",family:"Niger-Congo (Bantu)",widely:true},{name:"Swahili",family:"Niger-Congo (Bantu)",widely:true},{name:"Kikongo",family:"Niger-Congo (Bantu)",widely:true},{name:"Tshiluba",family:"Niger-Congo (Bantu)",widely:true}]},
+"188":{name:"Costa Rica",official:[{name:"Spanish",family:"Indo-European (Romance)",widely:false}],widely:[]},
+"204":{name:"Benin",official:[{name:"French",family:"Indo-European (Romance)",widely:false}],widely:[]},
+"208":{name:"Denmark",official:[{name:"Danish",family:"Indo-European (Germanic)",widely:false}],widely:[{name:"German",family:"Indo-European (Germanic)",widely:true},{name:"Arabic",family:"Afro-Asiatic (Semitic)",widely:true}]},
+"226":{name:"Equatorial Guinea",official:[{name:"Spanish",family:"Indo-European (Romance)",widely:false},{name:"French",family:"Indo-European (Romance)",widely:false},{name:"Portuguese",family:"Indo-European (Romance)",widely:false}],widely:[{name:"Fang",family:"Niger-Congo (Bantu)",widely:true}]},
+"231":{name:"Ethiopia",official:[{name:"Amharic",family:"Afro-Asiatic (Semitic)",widely:false}],widely:[{name:"Oromo",family:"Afro-Asiatic (Cushitic)",widely:true},{name:"Tigrinya",family:"Afro-Asiatic (Semitic)",widely:true},{name:"Somali",family:"Afro-Asiatic (Cushitic)",widely:true},{name:"Sidamo",family:"Afro-Asiatic (Cushitic)",widely:true}]},
+"262":{name:"Djibouti",official:[{name:"Arabic",family:"Afro-Asiatic (Semitic)",widely:false},{name:"French",family:"Indo-European (Romance)",widely:false}],widely:[{name:"Somali",family:"Afro-Asiatic (Cushitic)",widely:true},{name:"Afar",family:"Afro-Asiatic (Cushitic)",widely:true}]},
+"266":{name:"Gabon",official:[{name:"French",family:"Indo-European (Romance)",widely:false}],widely:[{name:"Fang",family:"Niger-Congo (Bantu)",widely:true}]},
+"270":{name:"Gambia",official:[{name:"English",family:"Indo-European (Germanic)",widely:false}],widely:[{name:"Mandinka",family:"Niger-Congo (Mande)",widely:true},{name:"Fula",family:"Niger-Congo (Atlantic)",widely:true}]},
+"288":{name:"Ghana",official:[{name:"English",family:"Indo-European (Germanic)",widely:false}],widely:[{name:"Akan (Twi)",family:"Niger-Congo (Kwa)",widely:true},{name:"Dagbani",family:"Niger-Congo (Gur)",widely:true},{name:"Ewe",family:"Niger-Congo (Kwa)",widely:true}]},
+"324":{name:"Guinea",official:[{name:"French",family:"Indo-European (Romance)",widely:false}],widely:[{name:"Pular",family:"Niger-Congo (Atlantic)",widely:true},{name:"Malinke",family:"Niger-Congo (Mande)",widely:true}]},
+"328":{name:"Guyana",official:[{name:"English",family:"Indo-European (Germanic)",widely:false}],widely:[{name:"Guyanese Creole",family:"English-based creole",widely:true}]},
+"404":{name:"Kenya",official:[{name:"Swahili",family:"Niger-Congo (Bantu)",widely:false},{name:"English",family:"Indo-European (Germanic)",widely:false}],widely:[{name:"Kikuyu",family:"Niger-Congo (Bantu)",widely:true},{name:"Luhya",family:"Niger-Congo (Bantu)",widely:true},{name:"Luo",family:"Nilo-Saharan (Nilotic)",widely:true}]},
+"426":{name:"Lesotho",official:[{name:"Sesotho",family:"Niger-Congo (Bantu)",widely:false},{name:"English",family:"Indo-European (Germanic)",widely:false}],widely:[]},
+"430":{name:"Liberia",official:[{name:"English",family:"Indo-European (Germanic)",widely:false}],widely:[{name:"Kpelle",family:"Niger-Congo (Mande)",widely:true},{name:"Bassa",family:"Niger-Congo (Kru)",widely:true}]},
+"434":{name:"Libya",official:[{name:"Arabic",family:"Afro-Asiatic (Semitic)",widely:false}],widely:[{name:"Berber",family:"Afro-Asiatic (Berber)",widely:true}]},
+"450":{name:"Madagascar",official:[{name:"Malagasy",family:"Austronesian",widely:false},{name:"French",family:"Indo-European (Romance)",widely:false}],widely:[]},
+"454":{name:"Malawi",official:[{name:"Chichewa",family:"Niger-Congo (Bantu)",widely:false},{name:"English",family:"Indo-European (Germanic)",widely:false}],widely:[]},
+"466":{name:"Mali",official:[{name:"French",family:"Indo-European (Romance)",widely:false}],widely:[{name:"Bambara",family:"Niger-Congo (Mande)",widely:true},{name:"Fulfulde",family:"Niger-Congo (Atlantic)",widely:true}]},
+"478":{name:"Mauritania",official:[{name:"Arabic",family:"Afro-Asiatic (Semitic)",widely:false}],widely:[{name:"Pulaar",family:"Niger-Congo (Atlantic)",widely:true},{name:"Soninke",family:"Niger-Congo (Mande)",widely:true}]},
+"480":{name:"Mauritius",official:[{name:"English",family:"Indo-European (Germanic)",widely:false}],widely:[{name:"French",family:"Indo-European (Romance)",widely:true},{name:"Mauritian Creole",family:"French-based creole",widely:true},{name:"Bhojpuri",family:"Indo-European (Indo-Aryan)",widely:true}]},
+"504":{name:"Morocco",official:[{name:"Arabic",family:"Afro-Asiatic (Semitic)",widely:false},{name:"Berber",family:"Afro-Asiatic (Berber)",widely:false}],widely:[{name:"French",family:"Indo-European (Romance)",widely:true}]},
+"508":{name:"Mozambique",official:[{name:"Portuguese",family:"Indo-European (Romance)",widely:false}],widely:[{name:"Makhuwa",family:"Niger-Congo (Bantu)",widely:true},{name:"Tsonga",family:"Niger-Congo (Bantu)",widely:true}]},
+"516":{name:"Namibia",official:[{name:"English",family:"Indo-European (Germanic)",widely:false}],widely:[{name:"Oshiwambo",family:"Niger-Congo (Bantu)",widely:true},{name:"Afrikaans",family:"Indo-European (Germanic)",widely:true},{name:"Damara/Nama",family:"Khoisan (Khoe)",widely:true}]},
+"562":{name:"Niger",official:[{name:"French",family:"Indo-European (Romance)",widely:false}],widely:[{name:"Hausa",family:"Afro-Asiatic (Chadic)",widely:true},{name:"Zarma",family:"Niger-Congo (Songhai)",widely:true}]},
+"566":{name:"Nigeria",official:[{name:"English",family:"Indo-European (Germanic)",widely:false}],widely:[{name:"Hausa",family:"Afro-Asiatic (Chadic)",widely:true},{name:"Yoruba",family:"Niger-Congo (Yoruboid)",widely:true},{name:"Igbo",family:"Niger-Congo (Igboid)",widely:true},{name:"Fulfulde",family:"Niger-Congo (Atlantic)",widely:true}]},
+"624":{name:"Guinea-Bissau",official:[{name:"Portuguese",family:"Indo-European (Romance)",widely:false}],widely:[{name:"Crioulo",family:"Portuguese-based creole",widely:true},{name:"Balanta",family:"Niger-Congo (Atlantic)",widely:true}]},
+"638":{name:"Réunion",official:[{name:"French",family:"Indo-European (Romance)",widely:false}],widely:[]},
+"686":{name:"Senegal",official:[{name:"French",family:"Indo-European (Romance)",widely:false}],widely:[{name:"Wolof",family:"Niger-Congo (Atlantic)",widely:true},{name:"Pulaar",family:"Niger-Congo (Atlantic)",widely:true}]},
+"694":{name:"Sierra Leone",official:[{name:"English",family:"Indo-European (Germanic)",widely:false}],widely:[{name:"Mende",family:"Niger-Congo (Mande)",widely:true},{name:"Temne",family:"Niger-Congo (Atlantic)",widely:true}]},
+"706":{name:"Somalia",official:[{name:"Somali",family:"Afro-Asiatic (Cushitic)",widely:false},{name:"Arabic",family:"Afro-Asiatic (Semitic)",widely:false}],widely:[]},
+"710":{name:"South Africa",official:[{name:"Zulu",family:"Niger-Congo (Bantu)",widely:false},{name:"Xhosa",family:"Niger-Congo (Bantu)",widely:false},{name:"Afrikaans",family:"Indo-European (Germanic)",widely:false},{name:"English",family:"Indo-European (Germanic)",widely:false},{name:"Sepedi",family:"Niger-Congo (Bantu)",widely:false},{name:"Setswana",family:"Niger-Congo (Bantu)",widely:false},{name:"Tsonga",family:"Niger-Congo (Bantu)",widely:false},{name:"Swati",family:"Niger-Congo (Bantu)",widely:false},{name:"Venda",family:"Niger-Congo (Bantu)",widely:false},{name:"Ndebele",family:"Niger-Congo (Bantu)",widely:false}],widely:[]},
+"728":{name:"South Sudan",official:[{name:"English",family:"Indo-European (Germanic)",widely:false}],widely:[{name:"Dinka",family:"Nilo-Saharan (Nilotic)",widely:true},{name:"Nuer",family:"Nilo-Saharan (Nilotic)",widely:true},{name:"Arabic",family:"Afro-Asiatic (Semitic)",widely:true}]},
+"729":{name:"Sudan",official:[{name:"Arabic",family:"Afro-Asiatic (Semitic)",widely:false},{name:"English",family:"Indo-European (Germanic)",widely:false}],widely:[{name:"Beja",family:"Afro-Asiatic (Cushitic)",widely:true}]},
+"732":{name:"Western Sahara",official:[{name:"Arabic",family:"Afro-Asiatic (Semitic)",widely:false}],widely:[]},
+"748":{name:"Eswatini",official:[{name:"Swati",family:"Niger-Congo (Bantu)",widely:false},{name:"English",family:"Indo-European (Germanic)",widely:false}],widely:[]},
+"800":{name:"Tanzania",official:[{name:"Swahili",family:"Niger-Congo (Bantu)",widely:false},{name:"English",family:"Indo-European (Germanic)",widely:false}],widely:[{name:"Sukuma",family:"Niger-Congo (Bantu)",widely:true},{name:"Chaga",family:"Niger-Congo (Bantu)",widely:true}]},
+"834":{name:"Togo",official:[{name:"French",family:"Indo-European (Romance)",widely:false}],widely:[{name:"Ewe",family:"Niger-Congo (Kwa)",widely:true},{name:"Kabiye",family:"Niger-Congo (Gur)",widely:true}]},
+"894":{name:"Zambia",official:[{name:"English",family:"Indo-European (Germanic)",widely:false}],widely:[{name:"Bemba",family:"Niger-Congo (Bantu)",widely:true},{name:"Nyanja",family:"Niger-Congo (Bantu)",widely:true}]},
+"896":{name:"Zimbabwe",official:[{name:"Shona",family:"Niger-Congo (Bantu)",widely:false},{name:"Ndebele",family:"Niger-Congo (Bantu)",widely:false},{name:"English",family:"Indo-European (Germanic)",widely:false}],widely:[]},
+"012":{name:"Argentina",official:[{name:"Spanish",family:"Indo-European (Romance)",widely:false}],widely:[{name:"Italian",family:"Indo-European (Romance)",widely:true},{name:"Guaraní",family:"Tupian",widely:true}]},
+// ─── Americas ───
+"032":{name:"Antigua and Barbuda",official:[{name:"English",family:"Indo-European (Germanic)",widely:false}],widely:[{name:"English Creole",family:"English-based creole",widely:true}]},
+"044":{name:"Bolivia",official:[{name:"Spanish",family:"Indo-European (Romance)",widely:false},{name:"Quechua",family:"Quechuan",widely:false},{name:"Aymara",family:"Aymaran",widely:false}],widely:[]},
+"060":{name:"Bermuda",official:[{name:"English",family:"Indo-European (Germanic)",widely:false}],widely:[]},
+"068":{name:"Bolivia",official:[{name:"Spanish",family:"Indo-European (Romance)",widely:false},{name:"Quechua",family:"Quechuan",widely:false},{name:"Aymara",family:"Aymaran",widely:false}],widely:[]},
+"076":{name:"Brazil",official:[{name:"Portuguese",family:"Indo-European (Romance)",widely:false}],widely:[{name:"German",family:"Indo-European (Germanic)",widely:true},{name:"Japanese",family:"Japonic",widely:true},{name:"Tupi",family:"Tupian",widely:true}]},
+"124":{name:"Canada",official:[{name:"English",family:"Indo-European (Germanic)",widely:false},{name:"French",family:"Indo-European (Romance)",widely:false}],widely:[{name:"Chinese",family:"Sino-Tibetan",widely:true},{name:"Punjabi",family:"Indo-European (Indo-Aryan)",widely:true},{name:"Arabic",family:"Afro-Asiatic (Semitic)",widely:true}]},
+"188":{name:"Costa Rica",official:[{name:"Spanish",family:"Indo-European (Romance)",widely:false}],widely:[]},
+"192":{name:"Cuba",official:[{name:"Spanish",family:"Indo-European (Romance)",widely:false}],widely:[]},
+"214":{name:"Dominica",official:[{name:"English",family:"Indo-European (Germanic)",widely:false}],widely:[{name:"French Creole",family:"French-based creole",widely:true}]},
+"218":{name:"Ecuador",official:[{name:"Spanish",family:"Indo-European (Romance)",widely:false}],widely:[{name:"Quechua",family:"Quechuan",widely:true}]},
+"222":{name:"El Salvador",official:[{name:"Spanish",family:"Indo-European (Romance)",widely:false}],widely:[{name:"Nawat",family:"Uto-Aztecan",widely:true}]},
+"308":{name:"El Salvador",official:[{name:"Spanish",family:"Indo-European (Romance)",widely:false}],widely:[]},
+"320":{name:"Guatemala",official:[{name:"Spanish",family:"Indo-European (Romance)",widely:false}],widely:[{name:"K'iche'",family:"Mayan",widely:true},{name:"Q'eqchi'",family:"Mayan",widely:true},{name:"Mam",family:"Mayan",widely:true}]},
+"332":{name:"Haiti",official:[{name:"French",family:"Indo-European (Romance)",widely:false},{name:"Haitian Creole",family:"French-based creole",widely:false}],widely:[]},
+"340":{name:"Honduras",official:[{name:"Spanish",family:"Indo-European (Romance)",widely:false}],widely:[{name:"Garifuna",family:"Arawakan",widely:true}]},
+"388":{name:"Jamaica",official:[{name:"English",family:"Indo-European (Germanic)",widely:false}],widely:[{name:"Jamaican Patois",family:"English-based creole",widely:true}]},
+"484":{name:"Mexico",official:[{name:"Spanish",family:"Indo-European (Romance)",widely:false}],widely:[{name:"Nahuatl",family:"Uto-Aztecan",widely:true},{name:"Yucatec Maya",family:"Mayan",widely:true},{name:"Zapotec",family:"Oto-Manguean",widely:true}]},
+"558":{name:"Nicaragua",official:[{name:"Spanish",family:"Indo-European (Romance)",widely:false}],widely:[]},
+"591":{name:"Panama",official:[{name:"Spanish",family:"Indo-European (Romance)",widely:false}],widely:[{name:"English",family:"Indo-European (Germanic)",widely:true}]},
+"600":{name:"Paraguay",official:[{name:"Spanish",family:"Indo-European (Romance)",widely:false},{name:"Guaraní",family:"Tupian",widely:false}],widely:[]},
+"604":{name:"Peru",official:[{name:"Spanish",family:"Indo-European (Romance)",widely:false}],widely:[{name:"Quechua",family:"Quechuan",widely:true},{name:"Aymara",family:"Aymaran",widely:true}]},
+"630":{name:"Puerto Rico",official:[{name:"Spanish",family:"Indo-European (Romance)",widely:false},{name:"English",family:"Indo-European (Germanic)",widely:false}],widely:[]},
+"740":{name:"Suriname",official:[{name:"Dutch",family:"Indo-European (Germanic)",widely:false}],widely:[{name:"Sranan Tongo",family:"English-based creole",widely:true},{name:"Hindi",family:"Indo-European (Indo-Aryan)",widely:true}]},
+"840":{name:"United States of America",official:[{name:"English",family:"Indo-European (Germanic)",widely:false}],widely:[{name:"Spanish",family:"Indo-European (Romance)",widely:true},{name:"Chinese",family:"Sino-Tibetan",widely:true},{name:"Tagalog",family:"Austronesian",widely:true},{name:"Vietnamese",family:"Austroasiatic",widely:true}]},
+"858":{name:"Venezuela",official:[{name:"Spanish",family:"Indo-European (Romance)",widely:false}],widely:[{name:"Wayuu",family:"Arawakan",widely:true},{name:"Yukpa",family:"Chibchan",widely:true}]},
+"084":{name:"Belize",official:[{name:"English",family:"Indo-European (Germanic)",widely:false}],widely:[{name:"Spanish",family:"Indo-European (Romance)",widely:true},{name:"Garifuna",family:"Arawakan",widely:true}]},
+// ─── Asia ───
+"031":{name:"Azerbaijan",official:[{name:"Azerbaijani",family:"Turkic",widely:false}],widely:[{name:"Russian",family:"Indo-European (Slavic)",widely:true},{name:"Talysh",family:"Indo-European (Iranian)",widely:true}]},
+"036":{name:"Australia",official:[{name:"English",family:"Indo-European (Germanic)",widely:false}],widely:[{name:"Mandarin",family:"Sino-Tibetan",widely:true},{name:"Arabic",family:"Afro-Asiatic (Semitic)",widely:true}]},
+"040":{name:"Austria",official:[{name:"German",family:"Indo-European (Germanic)",widely:false}],widely:[{name:"Czech",family:"Indo-European (Slavic)",widely:true},{name:"Hungarian",family:"Uralic (Finno-Ugric)",widely:true},{name:"Turkish",family:"Turkic",widely:true}]},
+"050":{name:"Bahrain",official:[{name:"Arabic",family:"Afro-Asiatic (Semitic)",widely:false}],widely:[{name:"Urdu",family:"Indo-European (Indo-Aryan)",widely:true}]},
+"051":{name:"Armenia",official:[{name:"Armenian",family:"Indo-European (Armenian)",widely:false}],widely:[{name:"Russian",family:"Indo-European (Slavic)",widely:true},{name:"Kurmanji",family:"Indo-European (Iranian)",widely:true}]},
+"064":{name:"Bhutan",official:[{name:"Dzongkha",family:"Sino-Tibetan (Tibeto-Burman)",widely:false}],widely:[]},
+"100":{name:"Bulgaria",official:[{name:"Bulgarian",family:"Indo-European (Slavic)",widely:false}],widely:[]},
+"104":{name:"Myanmar",official:[{name:"Burmese",family:"Sino-Tibetan (Tibeto-Burman)",widely:false}],widely:[{name:"Shan",family:"Kra-Dai",widely:true},{name:"Karen",family:"Sino-Tibetan",widely:true}]},
+"116":{name:"Cambodia",official:[{name:"Khmer",family:"Austroasiatic",widely:false}],widely:[]},
+"156":{name:"China",official:[{name:"Mandarin Chinese",family:"Sino-Tibetan",widely:false}],widely:[{name:"Cantonese",family:"Sino-Tibetan",widely:true},{name:"Mongolian",family:"Mongolic",widely:true},{name:"Tibetan",family:"Sino-Tibetan",widely:true},{name:"Uyghur",family:"Turkic",widely:true}]},
+"196":{name:"Cyprus",official:[{name:"Greek",family:"Indo-European (Hellenic)",widely:false},{name:"Turkish",family:"Turkic",widely:false}],widely:[]},
+"203":{name:"Czech Republic",official:[{name:"Czech",family:"Indo-European (Slavic)",widely:false}],widely:[]},
+"268":{name:"Georgia",official:[{name:"Georgian",family:"Kartvelian",widely:false}],widely:[{name:"Russian",family:"Indo-European (Slavic)",widely:true},{name:"Ossetian",family:"Indo-European (Iranian)",widely:true}]},
+"275":{name:"Palestine",official:[{name:"Arabic",family:"Afro-Asiatic (Semitic)",widely:false}],widely:[]},
+"356":{name:"India",official:[{name:"Hindi",family:"Indo-European (Indo-Aryan)",widely:false},{name:"English",family:"Indo-European (Germanic)",widely:false}],widely:[{name:"Bengali",family:"Indo-European (Indo-Aryan)",widely:true},{name:"Telugu",family:"Dravidian",widely:true},{name:"Marathi",family:"Indo-European (Indo-Aryan)",widely:true},{name:"Tamil",family:"Dravidian",widely:true},{name:"Gujarati",family:"Indo-European (Indo-Aryan)",widely:true},{name:"Urdu",family:"Indo-European (Indo-Aryan)",widely:true},{name:"Kannada",family:"Dravidian",widely:true},{name:"Odia",family:"Indo-European (Indo-Aryan)",widely:true},{name:"Malayalam",family:"Dravidian",widely:true},{name:"Punjabi",family:"Indo-European (Indo-Aryan)",widely:true}]},
+"360":{name:"Indonesia",official:[{name:"Indonesian",family:"Austronesian",widely:false}],widely:[{name:"Javanese",family:"Austronesian",widely:true},{name:"Sundanese",family:"Austronesian",widely:true},{name:"Madurese",family:"Austronesian",widely:true},{name:"Balinese",family:"Austronesian",widely:true}]},
+"364":{name:"Iran",official:[{name:"Persian (Farsi)",family:"Indo-European (Iranian)",widely:false}],widely:[{name:"Azerbaijani",family:"Turkic",widely:true},{name:"Kurdish",family:"Indo-European (Iranian)",widely:true},{name:"Luri",family:"Indo-European (Iranian)",widely:true}]},
+"368":{name:"Iraq",official:[{name:"Arabic",family:"Afro-Asiatic (Semitic)",widely:false},{name:"Kurdish",family:"Indo-European (Iranian)",widely:false}],widely:[{name:"Azeri",family:"Turkic",widely:true},{name:"Neo-Aramaic",family:"Afro-Asiatic (Semitic)",widely:true}]},
+"372":{name:"Ireland",official:[{name:"Irish",family:"Indo-European (Celtic)",widely:false},{name:"English",family:"Indo-European (Germanic)",widely:false}],widely:[]},
+"376":{name:"Israel",official:[{name:"Hebrew",family:"Afro-Asiatic (Semitic)",widely:false},{name:"Arabic",family:"Afro-Asiatic (Semitic)",widely:false}],widely:[{name:"Russian",family:"Indo-European (Slavic)",widely:true}]},
+"380":{name:"Italy",official:[{name:"Italian",family:"Indo-European (Romance)",widely:false}],widely:[{name:"German",family:"Indo-European (Germanic)",widely:true},{name:"French",family:"Indo-European (Romance)",widely:true},{name:"Slovene",family:"Indo-European (Slavic)",widely:true}]},
+"398":{name:"Kazakhstan",official:[{name:"Kazakh",family:"Turkic",widely:false},{name:"Russian",family:"Indo-European (Slavic)",widely:false}],widely:[]},
+"400":{name:"Jordan",official:[{name:"Arabic",family:"Afro-Asiatic (Semitic)",widely:false}],widely:[]},
+"408":{name:"North Korea",official:[{name:"Korean",family:"Koreanic",widely:false}],widely:[]},
+"410":{name:"South Korea",official:[{name:"Korean",family:"Koreanic",widely:false}],widely:[]},
+"414":{name:"Kuwait",official:[{name:"Arabic",family:"Afro-Asiatic (Semitic)",widely:false}],widely:[{name:"English",family:"Indo-European (Germanic)",widely:true}]},
+"417":{name:"Kyrgyzstan",official:[{name:"Kyrgyz",family:"Turkic",widely:false},{name:"Russian",family:"Indo-European (Slavic)",widely:false}],widely:[]},
+"418":{name:"Laos",official:[{name:"Lao",family:"Kra-Dai (Tai)",widely:false}],widely:[{name:"Khmer",family:"Austroasiatic",widely:true},{name:"Hmong",family:"Hmong-Mien",widely:true}]},
+"422":{name:"Lebanon",official:[{name:"Arabic",family:"Afro-Asiatic (Semitic)",widely:false}],widely:[{name:"Armenian",family:"Indo-European (Armenian)",widely:true},{name:"Kurdish",family:"Indo-European (Iranian)",widely:true}]},
+"458":{name:"Malaysia",official:[{name:"Malay",family:"Austronesian",widely:false}],widely:[{name:"Chinese",family:"Sino-Tibetan",widely:true},{name:"Tamil",family:"Dravidian",widely:true}]},
+"496":{name:"Mongolia",official:[{name:"Mongolian",family:"Mongolic",widely:false}],widely:[]},
+"498":{name:"Moldova",official:[{name:"Romanian",family:"Indo-European (Romance)",widely:false}],widely:[{name:"Russian",family:"Indo-European (Slavic)",widely:true},{name:"Gagauz",family:"Turkic",widely:true}]},
+"512":{name:"Oman",official:[{name:"Arabic",family:"Afro-Asiatic (Semitic)",widely:false}],widely:[]},
+"515":{name:"Mayotte",official:[{name:"French",family:"Indo-European (Romance)",widely:false}],widely:[]},
+"586":{name:"Pakistan",official:[{name:"Urdu",family:"Indo-European (Indo-Aryan)",widely:false},{name:"English",family:"Indo-European (Germanic)",widely:false}],widely:[{name:"Punjabi",family:"Indo-European (Indo-Aryan)",widely:true},{name:"Sindhi",family:"Indo-European (Indo-Aryan)",widely:true},{name:"Pashto",family:"Indo-European (Iranian)",widely:true},{name:"Balochi",family:"Indo-European (Iranian)",widely:true}]},
+"585":{name:"Palau",official:[{name:"Palauan",family:"Austronesian",widely:false},{name:"English",family:"Indo-European (Germanic)",widely:false}],widely:[]},
+"598":{name:"Papua New Guinea",official:[{name:"English",family:"Indo-European (Germanic)",widely:false},{name:"Tok Pisin",family:"English-based creole",widely:false},{name:"Hiri Motu",family:"Austronesian",widely:false}],widely:[{name:"Enga",family:"Trans–New Guinea",widely:true},{name:"Huli",family:"Trans–New Guinea",widely:true}]},
+"608":{name:"Philippines",official:[{name:"Filipino",family:"Austronesian",widely:false},{name:"English",family:"Indo-European (Germanic)",widely:false}],widely:[{name:"Cebuano",family:"Austronesian",widely:true},{name:"Ilocano",family:"Austronesian",widely:true},{name:"Hiligaynon",family:"Austronesian",widely:true}]},
+"634":{name:"Qatar",official:[{name:"Arabic",family:"Afro-Asiatic (Semitic)",widely:false}],widely:[{name:"Urdu",family:"Indo-European (Indo-Aryan)",widely:true}]},
+"643":{name:"Russia",official:[{name:"Russian",family:"Indo-European (Slavic)",widely:false}],widely:[{name:"Tatar",family:"Turkic",widely:true},{name:"Chechen",family:"Northeast Caucasian",widely:true},{name:"Bashkir",family:"Turkic",widely:true},{name:"Chuvash",family:"Turkic",widely:true}]},
+"702":{name:"Singapore",official:[{name:"English",family:"Indo-European (Germanic)",widely:false},{name:"Malay",family:"Austronesian",widely:false},{name:"Mandarin",family:"Sino-Tibetan",widely:false},{name:"Tamil",family:"Dravidian",widely:false}],widely:[]},
+"703":{name:"Slovakia",official:[{name:"Slovak",family:"Indo-European (Slavic)",widely:false}],widely:[]},
+"704":{name:"Vietnam",official:[{name:"Vietnamese",family:"Austroasiatic",widely:false}],widely:[{name:"Chinese",family:"Sino-Tibetan",widely:true},{name:"Thai",family:"Kra-Dai",widely:true}]},
+"705":{name:"Slovenia",official:[{name:"Slovene",family:"Indo-European (Slavic)",widely:false}],widely:[]},
+"760":{name:"Syria",official:[{name:"Arabic",family:"Afro-Asiatic (Semitic)",widely:false}],widely:[{name:"Kurdish",family:"Indo-European (Iranian)",widely:true},{name:"Armenian",family:"Indo-European (Armenian)",widely:true}]},
+"762":{name:"Tajikistan",official:[{name:"Tajik",family:"Indo-European (Iranian)",widely:false}],widely:[{name:"Russian",family:"Indo-European (Slavic)",widely:true}]},
+"764":{name:"Thailand",official:[{name:"Thai",family:"Kra-Dai (Tai)",widely:false}],widely:[{name:"Malay",family:"Austronesian",widely:true},{name:"Khmer",family:"Austroasiatic",widely:true}]},
+"768":{name:"Togo",official:[{name:"French",family:"Indo-European (Romance)",widely:false}],widely:[{name:"Ewe",family:"Niger-Congo (Kwa)",widely:true},{name:"Kabiye",family:"Niger-Congo (Gur)",widely:true}]},
+"784":{name:"United Arab Emirates",official:[{name:"Arabic",family:"Afro-Asiatic (Semitic)",widely:false}],widely:[{name:"Urdu",family:"Indo-European (Indo-Aryan)",widely:true},{name:"Persian",family:"Indo-European (Iranian)",widely:true}]},
+"792":{name:"Turkey",official:[{name:"Turkish",family:"Turkic",widely:false}],widely:[{name:"Kurdish",family:"Indo-European (Iranian)",widely:true},{name:"Zaza",family:"Indo-European (Iranian)",widely:true}]},
+"795":{name:"Turkmenistan",official:[{name:"Turkmen",family:"Turkic",widely:false}],widely:[{name:"Russian",family:"Indo-European (Slavic)",widely:true}]},
+"860":{name:"Uzbekistan",official:[{name:"Uzbek",family:"Turkic",widely:false}],widely:[{name:"Russian",family:"Indo-European (Slavic)",widely:true},{name:"Tajik",family:"Indo-European (Iranian)",widely:true}]},
+"887":{name:"Yemen",official:[{name:"Arabic",family:"Afro-Asiatic (Semitic)",widely:false}],widely:[]},
+"392":{name:"Japan",official:[{name:"Japanese",family:"Japonic",widely:false}],widely:[]},
+"364":{name:"Iran",official:[{name:"Persian (Farsi)",family:"Indo-European (Iranian)",widely:false}],widely:[{name:"Azerbaijani",family:"Turkic",widely:true},{name:"Kurdish",family:"Indo-European (Iranian)",widely:true}]},
+// ─── Europe ───
+"008":{name:"Albania",official:[{name:"Albanian",family:"Indo-European (Albanian)",widely:false}],widely:[]},
+"010":{name:"Åland Islands",official:[{name:"Swedish",family:"Indo-European (Germanic)",widely:false}],widely:[]},
+"020":{name:"Armenia",official:[{name:"Armenian",family:"Indo-European (Armenian)",widely:false}],widely:[{name:"Russian",family:"Indo-European (Slavic)",widely:true},{name:"Kurmanji",family:"Indo-European (Iranian)",widely:true}]},
+"040":{name:"Austria",official:[{name:"German",family:"Indo-European (Germanic)",widely:false}],widely:[{name:"Czech",family:"Indo-European (Slavic)",widely:true},{name:"Hungarian",family:"Uralic (Finno-Ugric)",widely:true},{name:"Turkish",family:"Turkic",widely:true}]},
+"056":{name:"Belgium",official:[{name:"Dutch",family:"Indo-European (Germanic)",widely:false},{name:"French",family:"Indo-European (Romance)",widely:false},{name:"German",family:"Indo-European (Germanic)",widely:false}],widely:[{name:"Arabic",family:"Afro-Asiatic (Semitic)",widely:true},{name:"Turkish",family:"Turkic",widely:true}]},
+"070":{name:"Bosnia and Herzegovina",official:[{name:"Bosnian",family:"Indo-European (Slavic)",widely:false},{name:"Croatian",family:"Indo-European (Slavic)",widely:false},{name:"Serbian",family:"Indo-European (Slavic)",widely:false}],widely:[]},
+"100":{name:"Bulgaria",official:[{name:"Bulgarian",family:"Indo-European (Slavic)",widely:false}],widely:[]},
+"191":{name:"Croatia",official:[{name:"Croatian",family:"Indo-European (Slavic)",widely:false}],widely:[]},
+"196":{name:"Cyprus",official:[{name:"Greek",family:"Indo-European (Hellenic)",widely:false},{name:"Turkish",family:"Turkic",widely:false}],widely:[]},
+"203":{name:"Czech Republic",official:[{name:"Czech",family:"Indo-European (Slavic)",widely:false}],widely:[]},
+"208":{name:"Denmark",official:[{name:"Danish",family:"Indo-European (Germanic)",widely:false}],widely:[{name:"German",family:"Indo-European (Germanic)",widely:true},{name:"Arabic",family:"Afro-Asiatic (Semitic)",widely:true}]},
+"233":{name:"Netherlands",official:[{name:"Dutch",family:"Indo-European (Germanic)",widely:false}],widely:[{name:"Turkish",family:"Turkic",widely:true}]},
+"234":{name:"Åland Islands",official:[{name:"Swedish",family:"Indo-European (Germanic)",widely:false}],widely:[]},
+"246":{name:"Finland",official:[{name:"Finnish",family:"Uralic (Finno-Ugric)",widely:false},{name:"Swedish",family:"Indo-European (Germanic)",widely:false}],widely:[]},
+"250":{name:"France",official:[{name:"French",family:"Indo-European (Romance)",widely:false}],widely:[{name:"Arabic",family:"Afro-Asiatic (Semitic)",widely:true},{name:"Portuguese",family:"Indo-European (Romance)",widely:true},{name:"Turkish",family:"Turkic",widely:true},{name:"Berber",family:"Afro-Asiatic (Berber)",widely:true}]},
+"276":{name:"Germany",official:[{name:"German",family:"Indo-European (Germanic)",widely:false}],widely:[{name:"Turkish",family:"Turkic",widely:true},{name:"Russian",family:"Indo-European (Slavic)",widely:true},{name:"Polish",family:"Indo-European (Slavic)",widely:true}]},
+"300":{name:"Greece",official:[{name:"Greek",family:"Indo-European (Hellenic)",widely:false}],widely:[]},
+"334":{name:"Gibraltar",official:[{name:"English",family:"Indo-European (Germanic)",widely:false}],widely:[{name:"Spanish",family:"Indo-European (Romance)",widely:true}]},
+"348":{name:"Hungary",official:[{name:"Hungarian",family:"Uralic (Finno-Ugric)",widely:false}],widely:[]},
+"352":{name:"Iceland",official:[{name:"Icelandic",family:"Indo-European (Germanic)",widely:false}],widely:[]},
+"372":{name:"Ireland",official:[{name:"Irish",family:"Indo-European (Celtic)",widely:false},{name:"English",family:"Indo-European (Germanic)",widely:false}],widely:[]},
+"380":{name:"Italy",official:[{name:"Italian",family:"Indo-European (Romance)",widely:false}],widely:[{name:"German",family:"Indo-European (Germanic)",widely:true},{name:"French",family:"Indo-European (Romance)",widely:true},{name:"Slovene",family:"Indo-European (Slavic)",widely:true}]},
+"428":{name:"Latvia",official:[{name:"Latvian",family:"Indo-European (Baltic)",widely:false}],widely:[{name:"Russian",family:"Indo-European (Slavic)",widely:true}]},
+"438":{name:"Liechtenstein",official:[{name:"German",family:"Indo-European (Germanic)",widely:false}],widely:[]},
+"440":{name:"Lithuania",official:[{name:"Lithuanian",family:"Indo-European (Baltic)",widely:false}],widely:[{name:"Polish",family:"Indo-European (Slavic)",widely:true}]},
+"442":{name:"Luxembourg",official:[{name:"Luxembourgish",family:"Indo-European (Germanic)",widely:false},{name:"French",family:"Indo-European (Romance)",widely:false},{name:"German",family:"Indo-European (Germanic)",widely:false}],widely:[{name:"Portuguese",family:"Indo-European (Romance)",widely:true}]},
+"446":{name:"Macau",official:[{name:"Chinese",family:"Sino-Tibetan",widely:false},{name:"Portuguese",family:"Indo-European (Romance)",widely:false}],widely:[]},
+"470":{name:"Macedonia (former Yugoslav Rep.)",official:[{name:"Macedonian",family:"Indo-European (Slavic)",widely:false}],widely:[]},
+"492":{name:"Monaco",official:[{name:"French",family:"Indo-European (Romance)",widely:false}],widely:[{name:"English",family:"Indo-European (Germanic)",widely:true}]},
+"499":{name:"Montenegro",official:[{name:"Montenegrin",family:"Indo-European (Slavic)",widely:false}],widely:[]},
+"528":{name:"Netherlands",official:[{name:"Dutch",family:"Indo-European (Germanic)",widely:false}],widely:[{name:"Turkish",family:"Turkic",widely:true}]},
+"578":{name:"Norway",official:[{name:"Norwegian",family:"Indo-European (Germanic)",widely:false},{name:"Sami",family:"Uralic (Sami)",widely:false}],widely:[]},
+"616":{name:"Poland",official:[{name:"Polish",family:"Indo-European (Slavic)",widely:false}],widely:[]},
+"620":{name:"Portugal",official:[{name:"Portuguese",family:"Indo-European (Romance)",widely:false}],widely:[]},
+"642":{name:"Romania",official:[{name:"Romanian",family:"Indo-European (Romance)",widely:false}],widely:[{name:"Hungarian",family:"Uralic (Finno-Ugric)",widely:true},{name:"Romani",family:"Indo-European (Indo-Aryan)",widely:true}]},
+"643":{name:"Russia",official:[{name:"Russian",family:"Indo-European (Slavic)",widely:false}],widely:[{name:"Tatar",family:"Turkic",widely:true},{name:"Chechen",family:"Northeast Caucasian",widely:true},{name:"Bashkir",family:"Turkic",widely:true}]},
+"674":{name:"San Marino",official:[{name:"Italian",family:"Indo-European (Romance)",widely:false}],widely:[]},
+"688":{name:"Serbia",official:[{name:"Serbian",family:"Indo-European (Slavic)",widely:false}],widely:[]},
+"703":{name:"Slovakia",official:[{name:"Slovak",family:"Indo-European (Slavic)",widely:false}],widely:[]},
+"705":{name:"Slovenia",official:[{name:"Slovene",family:"Indo-European (Slavic)",widely:false}],widely:[]},
+"724":{name:"Spain",official:[{name:"Spanish",family:"Indo-European (Romance)",widely:false}],widely:[{name:"Catalan",family:"Indo-European (Romance)",widely:true},{name:"Galician",family:"Indo-European (Romance)",widely:true},{name:"Basque",family:"Isolate",widely:true}]},
+"752":{name:"Sweden",official:[{name:"Swedish",family:"Indo-European (Germanic)",widely:false}],widely:[{name:"Finnish",family:"Uralic (Finno-Ugric)",widely:true}]},
+"756":{name:"Switzerland",official:[{name:"German",family:"Indo-European (Germanic)",widely:false},{name:"French",family:"Indo-European (Romance)",widely:false},{name:"Italian",family:"Indo-European (Romance)",widely:false},{name:"Romansh",family:"Indo-European (Romance)",widely:false}],widely:[{name:"English",family:"Indo-European (Germanic)",widely:true}]},
+"826":{name:"United Kingdom",official:[{name:"English",family:"Indo-European (Germanic)",widely:false}],widely:[{name:"Polish",family:"Indo-European (Slavic)",widely:true},{name:"Punjabi",family:"Indo-European (Indo-Aryan)",widely:true},{name:"Bengali",family:"Indo-European (Indo-Aryan)",widely:true},{name:"Urdu",family:"Indo-European (Indo-Aryan)",widely:true}]},
+// ─── Oceania ───
+"024":{name:"Antarctica",official:[],widely:[]},
+"036":{name:"Australia",official:[{name:"English",family:"Indo-European (Germanic)",widely:false}],widely:[{name:"Mandarin",family:"Sino-Tibetan",widely:true},{name:"Arabic",family:"Afro-Asiatic (Semitic)",widely:true}]},
+"242":{name:"Fiji",official:[{name:"Fijian",family:"Austronesian",widely:false},{name:"English",family:"Indo-European (Germanic)",widely:false},{name:"Fiji Hindi",family:"Indo-European (Indo-Aryan)",widely:false}],widely:[]},
+"296":{name:"Kiribati",official:[{name:"English",family:"Indo-European (Germanic)",widely:false},{name:"Gilbertese",family:"Austronesian",widely:false}],widely:[]},
+"520":{name:"Northern Mariana Islands",official:[{name:"English",family:"Indo-European (Germanic)",widely:false}],widely:[]},
+"583":{name:"Micronesia",official:[{name:"English",family:"Indo-European (Germanic)",widely:false}],widely:[]},
+"584":{name:"Marshall Islands",official:[{name:"Marshallese",family:"Austronesian",widely:false},{name:"English",family:"Indo-European (Germanic)",widely:false}],widely:[]},
+"580":{name:"Guam",official:[{name:"English",family:"Indo-European (Germanic)",widely:false}],widely:[{name:"Chamorro",family:"Austronesian",widely:true}]},
+"581":{name:"Palau",official:[{name:"Palauan",family:"Austronesian",widely:false},{name:"English",family:"Indo-European (Germanic)",widely:false}],widely:[]},
+"598":{name:"Papua New Guinea",official:[{name:"English",family:"Indo-European (Germanic)",widely:false},{name:"Tok Pisin",family:"English-based creole",widely:false},{name:"Hiri Motu",family:"Austronesian",widely:false}],widely:[]},
+"776":{name:"Tonga",official:[{name:"English",family:"Indo-European (Germanic)",widely:false},{name:"Tongan",family:"Austronesian",widely:false}],widely:[]},
+"798":{name:"Tuvalu",official:[{name:"English",family:"Indo-European (Germanic)",widely:false}],widely:[]},
+"876":{name:"Wallis and Futuna",official:[{name:"French",family:"Indo-European (Romance)",widely:false}],widely:[]},
+"554":{name:"New Zealand",official:[{name:"English",family:"Indo-European (Germanic)",widely:false},{name:"Māori",family:"Austronesian",widely:false}],widely:[{name:"Samoan",family:"Austronesian",widely:true}]},
+// ─── Special / Middle East ───
+"818":{name:"Egypt",official:[{name:"Arabic",family:"Afro-Asiatic (Semitic)",widely:false}],widely:[{name:"Sa'idi Arabic",family:"Afro-Asiatic (Semitic)",widely:true}]},
+"682":{name:"Saudi Arabia",official:[{name:"Arabic",family:"Afro-Asiatic (Semitic)",widely:false}],widely:[{name:"Somali",family:"Afro-Asiatic (Cushitic)",widely:true},{name:"Urdu",family:"Indo-European (Indo-Aryan)",widely:true}]},
+"404":{name:"Kenya",official:[{name:"Swahili",family:"Niger-Congo (Bantu)",widely:false},{name:"English",family:"Indo-European (Germanic)",widely:false}],widely:[{name:"Kikuyu",family:"Niger-Congo (Bantu)",widely:true},{name:"Luhya",family:"Niger-Congo (Bantu)",widely:true}]},
+"804":{name:"Ukraine",official:[{name:"Ukrainian",family:"Indo-European (Slavic)",widely:false}],widely:[{name:"Russian",family:"Indo-European (Slavic)",widely:true}]},
+"854":{name:"Burkina Faso",official:[{name:"French",family:"Indo-European (Romance)",widely:false}],widely:[{name:"Mooré",family:"Niger-Congo (Voltaic)",widely:true},{name:"Fulfulde",family:"Niger-Congo (Atlantic)",widely:true}]},
+"120":{name:"Cabo Verde",official:[{name:"Portuguese",family:"Indo-European (Romance)",widely:false}],widely:[{name:"Cape Verdean Creole",family:"Portuguese-based creole",widely:true}]},
+"004":{name:"Afghanistan",official:[{name:"Pashto",family:"Indo-European (Iranian)",widely:false},{name:"Dari",family:"Indo-European (Iranian)",widely:false}],widely:[{name:"Uzbek",family:"Turkic",widely:true},{name:"Turkmen",family:"Turkic",widely:true}]},
+"768":{name:"Togo",official:[{name:"French",family:"Indo-European (Romance)",widaily:false}],widely:[{name:"Ewe",family:"Niger-Congo (Kwa)",widely:true},{name:"Kabiye",family:"Niger-Congo (Gur)",widely:true}]},
+"900":{name:"Kosovo",official:[{name:"Albanian",family:"Indo-European (Albanian)",widely:false},{name:"Serbian",family:"Indo-European (Slavic)",widely:false}],widely:[]},
+"478":{name:"Mauritania",official:[{name:"Arabic",family:"Afro-Asiatic (Semitic)",widely:false}],widely:[{name:"Pulaar",family:"Niger-Congo (Atlantic)",widely:true},{name:"Soninke",family:"Niger-Congo (Mande)",widely:true}]},
+"140":{name:"Chad",official:[{name:"Arabic",family:"Afro-Asiatic (Semitic)",widely:false},{name:"French",family:"Indo-European (Romance)",widely:false}],widely:[{name:"Sara",family:"Nilo-Saharan",widely:true}]},
+"788":{name:"Tunisia",official:[{name:"Arabic",family:"Afro-Asiatic (Semitic)",widely:false}],widely:[{name:"French",family:"Indo-European (Romance)",widely:true},{name:"Berber",family:"Afro-Asiatic (Berber)",widely:true}]},
+"646":{name:"Rwanda",official:[{name:"Kinyarwanda",family:"Niger-Congo (Bantu)",widely:false},{name:"French",family:"Indo-European (Romance)",widely:false},{name:"English",family:"Indo-European (Germanic)",widely:false}],widely:[]},
+"226":{name:"Equatorial Guinea",official:[{name:"Spanish",family:"Indo-European (Romance)",widely:false},{name:"French",family:"Indo-European (Romance)",widely:false},{name:"Portuguese",family:"Indo-European (Romance)",widely:false}],widely:[{name:"Fang",family:"Niger-Congo (Bantu)",widely:true}]},
+"232":{name:"Eritrea",official:[{name:"Tigrinya",family:"Afro-Asiatic (Semitic)",widely:false},{name:"Arabic",family:"Afro-Asiatic (Semitic)",widely:false},{name:"English",family:"Indo-European (Germanic)",widely:false}],widely:[{name:"Tigre",family:"Afro-Asiatic (Cushitic)",widely:true}]},
+"690":{name:"Saint Vincent and Grenadines",official:[{name:"English",family:"Indo-European (Germanic)",widely:false}],widely:[]},
+"670":{name:"Saint Kitts and Nevis",official:[{name:"English",family:"Indo-European (Germanic)",widely:false}],widely:[]},
+"780":{name:"Trinidad and Tobago",official:[{name:"English",family:"Indo-European (Germanic)",widely:false}],widely:[{name:"Hindi",family:"Indo-European (Indo-Aryan)",widely:true}]},
+"534":{name:"Turks and Caicos",official:[{name:"English",family:"Indo-European (Germanic)",widely:false}],widely:[{name:"Spanish Creole",family:"Spanish-based creole",widely:true}]},
+"630":{name:"Puerto Rico",official:[{name:"Spanish",family:"Indo-European (Romance)",widely:false},{name:"English",family:"Indo-European (Germanic)",widely:false}],widely:[]},
+"666":{name:"French Polynesia",official:[{name:"French",family:"Indo-European (Romance)",widely:false}],widely:[{name:"Tahitian",family:"Austronesian",widely:true}]},
+"258":{name:"French Guiana",official:[{name:"French",family:"Indo-European (Romance)",widely:false}],widely:[]},
+"736":{name:"Sudan",official:[{name:"Arabic",family:"Afro-Asiatic (Semitic)",widely:false},{name:"English",family:"Indo-European (Germanic)",widely:false}],widely:[]},
+};
+
+// ═══════════════════════════════════════════════════════════
+// LANGUAGE FAMILY COLORS
+// ═══════════════════════════════════════════════════════════
+const FAMILY_COLORS = {
+  "Indo-European (Germanic)": "#3b82f6",
+  "Indo-European (Romance)": "#06b6d4",
+  "Indo-European (Slavic)": "#8b5cf6",
+  "Indo-European (Indo-Aryan)": "#10b981",
+  "Indo-European (Iranian)": "#f59e0b",
+  "Indo-European (Celtic)": "#a855f7",
+  "Indo-European (Baltic)": "#ec4899",
+  "Indo-European (Hellenic)": "#f472b6",
+  "Indo-European (Armenian)": "#d946ef",
+  "Afro-Asiatic (Semitic)": "#ef4444",
+  "Afro-Asiatic (Cushitic)": "#dc2626",
+  "Afro-Asiatic (Chadic)": "#b91c1c",
+  "Afro-Asiatic (Berber)": "#f87171",
+  "Niger-Congo (Bantu)": "#22c55e",
+  "Niger-Congo (Mande)": "#16a34a",
+  "Niger-Congo (Kwa)": "#15803d",
+  "Niger-Congo (Gur)": "#4ade80",
+  "Niger-Congo (Atlantic)": "#86efac",
+  "Niger-Congo (Songhai)": "#74c365",
+  "Niger-Congo (Gbe)": "#4dab5a",
+  "Niger-Congo (Yoruboid)": "#338a3e",
+  "Niger-Congo (Igboid)": "#5bb85e",
+  "Niger-Congo (Kru)": "#29962e",
+  "Niger-Congo": "#92400e",
+  "Sino-Tibetan": "#f97316",
+  "Sino-Tibetan (Tibeto-Burman)": "#ea580c",
+  "Turkic": "#eab308",
+  "Dravidian": "#14b8a6",
+  "Austronesian": "#0ea5e9",
+  "Austroasiatic": "#6366f1",
+  "Kra-Dai": "#a855f7",
+  "Kra-Dai (Tai)": "#7c3aed",
+  "Japonic": "#e11d48",
+  "Koreanic": "#be185d",
+  "Uralic (Finno-Ugric)": "#4f46e5",
+  "Uralic (Sami)": "#6d28d9",
+  "Uralic (Inuit)": "#78716c",
+  "Quechuan": "#78716c",
+  "Mayan": "#84cc16",
+  "Tupian": "#179c17",
+  "Aymaran": "#65a30d",
+  "Uto-Aztecan": "#b45309",
+  "Oto-Manguean": "#d97706",
+  "Mongolic": "#a16209",
+  "Isolate": "#6b7280",
+  "Creole": "#8b5cf6",
+  "French-based creole": "#7c3aed",
+  "Portuguese-based creole": "#6d28d9",
+  "English-based creole": "#5b21b6",
+  "Khoisan (Khoe)": "#9ca3af",
+  "Nilo-Saharan": "#0891b2",
+  "Nilo-Saharan (Nilotic)": "#06b6d4",
+  "Northeast Caucasian": "#c2410c",
+  "Trans–New Guinea": "#9333ea",
+  "Arawakan": "#0d9488",
+  "Chibchan": "#0f766e",
+  "Hmong-Mien": "#d6d3d1",
+  "Voltaic": "#92400e",
+  "Kartvelian": "#84cc16",
+  "Albanian": "#f472b6",
+  "Iberian-based creole": "#c084fc",
+  "Spanish-based creole": "#38bdf8",
+};
+
+// ═══════════════════════════════════════════════════════════
+// APP STATE
+// ═══════════════════════════════════════════════════════════
+let colorByFamily = false;
+let selectedCountry = null;
+let worldFeatures = [];
+let countriesByName = {};
+
+// ═══════════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════════
+async function init() {
+  const width = window.innerWidth;
+  const height = window.innerHeight - 60;
+
+  const svg = d3.select("#map-svg")
+    .attr("viewBox", `0 0 ${width} ${height}`);
+
+  const g = svg.append("g");
+
+  const projection = d3.geoNaturalEarth1()
+    .scale(width / 6.2)
+    .translate([width / 2, height / 2]);
+
+  const path = d3.geoPath().projection(projection);
+
+  // Zoom
+  const zoom = d3.zoom()
+    .scaleExtent([1, 12])
+    .on("zoom", (event) => {
+      g.attr("transform", event.transform);
+    });
+
+  svg.call(zoom);
+
+  // Zoom buttons
+  d3.select("#zoom-in").on("click", () => {
+    svg.transition().duration(400).call(zoom.scaleBy, 1.5);
+  });
+  d3.select("#zoom-out").on("click", () => {
+    svg.transition().duration(400).call(zoom.scaleBy, 0.67);
+  });
+  d3.select("#reset-zoom").on("click", () => {
+    svg.transition().duration(600).call(zoom.transform, d3.zoomIdentity);
+    deselectCountry();
+  });
+
+  function getCountryInfo(d) {
+    const iso = d.id;
+    let info = LANG_DATA[iso];
+    if (!info) {
+      // Try padded 3-digit, reverse, and numeric versions
+      const numId = String(iso).padStart(3, '0');
+      const revId = String(Number(iso));
+      info = LANG_DATA[iso] || LANG_DATA[Number(iso)] || LANG_DATA[numId] || LANG_DATA[revId];
+    }
+    if (!info) return null;
+    let primaryFamily = null;
+    if (info.official && info.official.length > 0) {
+      primaryFamily = info.official[0].family;
+    }
+    return { ...info, primaryFamily };
+  }
+
+  // Color scale helper
+  function getCountryColor(d) {
+    const info = getCountryInfo(d);
+    if (!colorByFamily) return "#334155";
+    if (!info || !info.primaryFamily) return "#1e293b";
+    return FAMILY_COLORS[info.primaryFamily] || "#475569";
+  }
+
+  // Load TopoJSON
+  const topoData = await d3.json("https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json");
+  const countries = topojson.feature(topoData, topoData.objects.countries);
+
+  worldFeatures = countries.features;
+
+  // Build name lookup
+  worldFeatures.forEach(f => {
+    const info = getCountryInfo(f);
+    if (info) {
+      countriesByName[info.name.toLowerCase()] = f;
+    }
+  });
+
+  // Draw countries
+  g.selectAll(".country-path")
+    .data(worldFeatures)
+    .enter()
+    .append("path")
+    .attr("class", "country-path")
+    .attr("d", path)
+    .attr("fill", d => {
+      const info = getCountryInfo(d);
+      if (!info) return "#1e293b";
+      if (colorByFamily) {
+        return FAMILY_COLORS[info.primaryFamily] || "#475569";
+      }
+      return "#334155";
+    })
+    .on("mouseenter", function(event, d) {
+      const info = getCountryInfo(d);
+      const tooltip = d3.select("#tooltip");
+      if (info) {
+        tooltip.select(".tt-name").text(info.name);
+        tooltip.select(".tt-sub").text(info.primaryFamily || "");
+      } else {
+        tooltip.select(".tt-name").text("Unknown territory");
+        tooltip.select(".tt-sub").text("");
+      }
+      tooltip.style("display", "block");
+    })
+    .on("mousemove", function(event) {
+      d3.select("#tooltip")
+        .style("left", (event.clientX + 14) + "px")
+        .style("top", (event.clientY - 10) + "px");
+    })
+    .on("mouseleave", function() {
+      d3.select("#tooltip").style("display", "none");
+    })
+    .on("click", function(event, d) {
+      event.stopPropagation();
+      selectCountry(d);
+    });
+
+  // Click background to deselect
+  svg.on("click", () => deselectCountry());
+
+  // ═══ Search ═══
+  const searchInput = document.getElementById("search-input");
+  const searchResults = document.getElementById("search-results");
+
+  searchInput.addEventListener("input", function() {
+    const q = this.value.trim().toLowerCase();
+    if (q.length < 1) {
+      searchResults.style.display = "none";
+      return;
+    }
+    const matches = worldFeatures
+      .map(f => {
+        const info = getCountryInfo(f);
+        return info ? { name: info.name, feature: f } : null;
+      })
+      .filter(Boolean)
+      .filter(f => f.name.toLowerCase().includes(q))
+      .slice(0, 10);
+
+    if (matches.length === 0) {
+      searchResults.style.display = "none";
+      return;
+    }
+
+    searchResults.innerHTML = matches.map(m =>
+      `<div class="result-item" data-id="${m.feature.id}">${m.name}</div>`
+    ).join("");
+
+    searchResults.style.display = "block";
+
+    searchResults.querySelectorAll(".result-item").forEach(el => {
+      el.addEventListener("click", () => {
+        const id = el.dataset.id;
+        const feature = worldFeatures.find(f => f.id == id);
+        if (feature) {
+          zoomToFeature(feature);
+          selectCountry(feature);
+        }
+        searchResults.style.display = "none";
+        searchInput.value = "";
+      });
+    });
+  });
+
+  searchInput.addEventListener("keydown", function(e) {
+    if (e.key === "Enter") {
+      const q = this.value.trim().toLowerCase();
+      const match = Object.entries(countriesByName).find(([k]) => k === q);
+      if (match) {
+        zoomToFeature(match[1]);
+        selectCountry(match[1]);
+      }
+      searchResults.style.display = "none";
+    }
+  });
+
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest("#search-box")) {
+      searchResults.style.display = "none";
+    }
+  });
+
+  // ═══ Color toggle ═══
+  d3.select("#toggle-color").on("click", function() {
+    colorByFamily = !colorByFamily;
+    d3.select(this).classed("active", colorByFamily);
+
+    g.selectAll(".country-path")
+      .transition().duration(400)
+      .attr("fill", d => {
+        const info = getCountryInfo(d);
+        if (!info) return "#1e293b";
+        if (colorByFamily) {
+          return FAMILY_COLORS[info.primaryFamily] || "#475569";
+        }
+        return "#334155";
+      });
+
+    updateLegend();
+  });
+
+  // ═══ Panel ═══
+  d3.select("#panel-close").on("click", () => {
+    document.getElementById("info-panel").classList.remove("open");
+    deselectCountry();
+  });
+
+  updateLegend();
+
+  // Hide loading
+  setTimeout(() => {
+    document.getElementById("loading").classList.add("hidden");
+  }, 300);
+}
+
+function selectCountry(d) {
+  deselectCountry();
+  selectedCountry = d;
+
+  const info = getCountryInfo(d);
+  const panel = document.getElementById("info-panel");
+  const body = document.getElementById("panel-body");
+
+  // Highlight the clicked path
+  d3.selectAll(".country-path.selected").attr("class", "country-path");
+  d3.selectAll(".country-path").filter(function() {
+    return this.__data__ === d;
+  }).attr("class", "country-path selected");
+
+  if (!info) {
+    body.innerHTML = `
+      <div class="no-data-text">
+        <div class="icon">🌍</div>
+        <p>No language data available for this region.</p>
+        <p class="sub">Try searching for another country in the search box above.</p>
+      </div>`;
+    panel.classList.add("open");
+    return;
+  }
+
+  let html = `<div class="panel-country-name">${info.name}</div>`;
+
+  if (info.primaryFamily) {
+    html += `<div class="panel-subtitle">Dominant language family: <strong>${info.primaryFamily}</strong></div>`;
+  } else {
+    html += `<div class="panel-subtitle">No primary language family data</div>`;
+  }
+
+  // Official languages
+  if (info.official && info.official.length > 0) {
+    html += `<div class="lang-section"><h3>Official Languages <span class="badge badge-official">${info.official.length}</span></h3>`;
+    info.official.forEach(l => {
+      html += `<div class="lang-item"><span class="lang-name">${l.name}</span><span class="lang-family">${l.family}</span></div>`;
+    });
+    html += `</div>`;
+  }
+
+  // Widely spoken
+  if (info.widely && info.widely.length > 0) {
+    html += `<div class="lang-section"><h3>Widely Spoken <span class="badge badge-widely">${info.widely.length}</span></h3>`;
+    info.widely.forEach(l => {
+      html += `<div class="lang-item"><span class="lang-name">${l.name}</span><span class="lang-family">${l.family}</span></div>`;
+    });
+    html += `</div>`;
+  }
+
+  body.innerHTML = html;
+  panel.classList.add("open");
+}
+
+function deselectCountry() {
+  selectedCountry = null;
+  d3.selectAll(".country-path").attr("class", "country-path");
+}
+
+function zoomToFeature(feature) {
+  const width = window.innerWidth;
+  const height = window.innerHeight - 60;
+
+  const bounds = path.bounds(feature);
+  const dx = bounds[1][0] - bounds[0][0];
+  const dy = bounds[1][1] - bounds[0][1];
+
+  const scale = Math.min(width / dx, height / dy) * 0.75;
+  const translate = [
+    width / 2 - scale * (bounds[0][0] + bounds[1][0]) / 2,
+    height / 2 - scale * (bounds[0][1] + bounds[1][1]) / 2
+  ];
+
+  svg = document.getElementById("map-svg");
+  d3.select(svg)
+    .transition()
+    .duration(750)
+    .call(
+      d3.zoom().transform,
+      d3.zoomIdentity.translate(translate[0], translate[1]).scale(scale)
+    );
+}
+
+function getCountryInfo(d) {
+  const iso = d.id;
+  let info = LANG_DATA[iso];
+  if (!info) {
+    const numId = String(iso).padStart(3, '0');
+    const revId = String(Number(iso));
+    info = LANG_DATA[iso] || LANG_DATA[Number(iso)] || LANG_DATA[numId] || LANG_DATA[revId];
+  }
+  if (!info) return null;
+  let primaryFamily = null;
+  if (info.official && info.official.length > 0) {
+    primaryFamily = info.official[0].family;
+  }
+  return { ...info, primaryFamily };
+}
+
+function updateLegend() {
+  const legend = document.getElementById("legend");
+  if (!colorByFamily) {
+    legend.classList.remove("visible");
+    return;
+  }
+  legend.classList.add("visible");
+
+  const families = Object.entries(FAMILY_COLORS)
+    .filter(([fam]) => {
+      return worldFeatures.some(f => {
+        const info = getCountryInfo(f);
+        return info && info.primaryFamily === fam;
+      });
+    })
+    .sort((a, b) => a[0].localeCompare(b[0]));
+
+  let html = `<h3>Language Families</h3>`;
+  families.forEach(([fam, color]) => {
+    html += `<div class="legend-item"><div class="legend-color" style="background:${color}"></div><span>${fam}</span></div>`;
+  });
+
+  html += `<div class="legend-item" style="margin-top:8px;padding-top:8px;border-top:1px solid #334155;">
+    <div class="legend-color" style="background:#1e293b"></div><span>No data</span></div>`;
+
+  legend.innerHTML = html;
+}
+
+// Handle resize
+window.addEventListener("resize", () => { location.reload(); });
+
+// Start
+init();
+</script>
+</body>
+</html>

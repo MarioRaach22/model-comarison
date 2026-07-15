@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gravity Sandbox</title>
+<style>
+  :root{
+    --ink: rgba(176,198,255,0.85);
+    --ink-dim: rgba(150,170,220,0.55);
+  }
+  html,body{
+    margin:0; padding:0; height:100%;
+    background:#04050d;
+    overflow:hidden;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: var(--ink);
+    cursor: crosshair;
+  }
+  canvas{ display:block; position:fixed; inset:0; }
+
+  #ui{
+    position:fixed; inset:0;
+    pointer-events:none;
+    z-index:10;
+  }
+
+  #title{
+    position:absolute; top:22px; left:26px;
+    font-size:13px; font-weight:600; letter-spacing:0.32em;
+    text-transform:uppercase;
+    color:var(--ink);
+    text-shadow:0 0 18px rgba(80,120,255,0.5);
+  }
+  #title small{
+    display:block; margin-top:6px; font-weight:400;
+    font-size:10px; letter-spacing:0.22em; color:var(--ink-dim);
+    text-shadow:none;
+  }
+
+  #legend{
+    position:absolute; left:26px; bottom:24px;
+    font-size:11px; letter-spacing:0.04em; line-height:1.9;
+    color:var(--ink-dim);
+    transition:opacity .5s ease;
+    text-shadow:0 1px 8px rgba(0,0,0,0.8);
+  }
+  #legend b{ color:var(--ink); font-weight:600; }
+  #legend kbd{
+    display:inline-block; min-width:18px; padding:1px 6px;
+    border:1px solid rgba(150,170,220,0.35);
+    border-radius:5px; font-size:10px; font-family:inherit;
+    background:rgba(20,26,48,0.5);
+    color:var(--ink);
+  }
+  #legend.hidden{ opacity:0; }
+
+  #stats{
+    position:absolute; right:26px; bottom:24px;
+    font-size:11px; letter-spacing:0.06em; line-height:1.8;
+    color:var(--ink-dim); text-align:right;
+    text-shadow:0 1px 8px rgba(0,0,0,0.8);
+    font-variant-numeric: tabular-nums;
+  }
+  #stats span{ color:var(--ink); }
+
+  #pause{
+    position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+    font-size:34px; font-weight:700; letter-spacing:0.4em;
+    color:rgba(220,230,255,0.85);
+    text-shadow:0 0 30px rgba(80,120,255,0.7);
+    opacity:0; transition:opacity .25s ease;
+  }
+  #pause.show{ opacity:1; }
+
+  #flash{
+    position:absolute; top:22px; left:50%; transform:translateX(-50%);
+    font-size:11px; letter-spacing:0.2em; text-transform:uppercase;
+    color:var(--ink-dim); opacity:0; transition:opacity .4s ease;
+    text-shadow:0 1px 8px rgba(0,0,0,0.8);
+  }
+  #flash.show{ opacity:1; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <div id="title">Gravity Sandbox<small>an n-body playground</small></div>
+  <div id="legend">
+    <div><b>Click</b> &nbsp;drop a heavy attractor</div>
+    <div><b>Right-click</b> &nbsp;remove nearest attractor</div>
+    <div><kbd>C</kbd> clear added &nbsp; <kbd>R</kbd> reset &nbsp; <kbd>Space</kbd> pause &nbsp; <kbd>H</kbd> help</div>
+  </div>
+  <div id="stats">
+    particles <span id="s-p">0</span><br>
+    attractors <span id="s-a">0</span><br>
+    fps <span id="s-f">0</span>
+  </div>
+  <div id="pause">PAUSED</div>
+  <div id="flash"></div>
+</div>
+
+<script>
+(() => {
+  "use strict";
+
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d', { alpha:false });
+
+  let W = 0, H = 0, DPR = 1;
+  function resize(){
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    W = window.innerWidth; H = window.innerHeight;
+    canvas.width = Math.floor(W * DPR);
+    canvas.height = Math.floor(H * DPR);
+    canvas.style.width = W + 'px';
+    canvas.style.height = H + 'px';
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    // repaint the void so we don't flash white after a resize
+    ctx.fillStyle = '#04050d';
+    ctx.fillRect(0, 0, W, H);
+  }
+  window.addEventListener('resize', resize);
+
+  // ---- tuning -----------------------------------------------------------
+  const N          = 820;     // particle count
+  const G          = 1.5;     // gravitational constant (pixel-units)
+  const SOFT       = 28;      // softening length — kills singularities
+  const SOFT2      = SOFT * SOFT;
+  const CENTRAL_M  = 1400;    // mass of the initial galactic core
+  const CLICK_M    = 2200;    // mass of a dropped attractor (heavy)
+  const MAX_ATTR   = 14;      // hard cap; oldest added is recycled
+  const DAMP       = 0.9995;  // gentle drag keeps energy bounded
+  const MAX_SPEED  = 14;      // speed clamp — no sling-shot escapes
+  const TRAIL_FADE = 0.135;   // lower = longer ghosting trails
+
+  // ---- state ------------------------------------------------------------
+  const px = new Float32Array(N);
+  const py = new Float32Array(N);
+  const vx = new Float32Array(N);
+  const vy = new Float32Array(N);
+
+  // attractor: {x,y,m,core,pulses:[t],lastPulse:t}
+  const attractors = [];
+
+  let paused = false;
+  let helpHidden = false;
+
+  // ---- colour palette (speed -> hue) -----------------------------------
+  const PAL = new Array(32);
+  const HALO = new Array(32);
+  for (let i = 0; i < 32; i++){
+    const t = i / 31;
+    const hue = 210 + t * 75;          // blue -> violet/magenta
+    const light = 46 + t * 44;         // dim -> white-hot
+    PAL[i]  = `hsl(${hue|0},85%,${light|0}%)`;
+    HALO[i] = `hsla(${hue|0},90%,${(light+6)|0}%,0.16)`;
+  }
+
+  // ---- init -------------------------------------------------------------
+  function respawn(i){
+    const cx = W * 0.5, cy = H * 0.5;
+    const baseR = Math.min(W, H) * 0.34;
+    const a = Math.random() * Math.PI * 2;
+    const r = Math.sqrt(Math.random()) * baseR + 18;
+    px[i] = cx + Math.cos(a) * r;
+    py[i] = cy + Math.sin(a) * r;
+    const speed = Math.sqrt(G * CENTRAL_M / (r + SOFT));
+    vx[i] = -Math.sin(a) * speed + (Math.random() - 0.5) * 1.2;
+    vy[i] =  Math.cos(a) * speed + (Math.random() - 0.5) * 1.2;
+  }
+
+  function resetParticles(){
+    for (let i = 0; i < N; i++) respawn(i);
+  }
+
+  function addAttractor(x, y, m, isCore){
+    if (!isCore && attractors.length >= MAX_ATTR){
+      // recycle the oldest non-core attractor
+      for (let i = 0; i < attractors.length; i++){
+        if (!attractors[i].core){ attractors.splice(i, 1); break; }
+      }
+    }
+    const now = performance.now();
+    attractors.push({
+      x, y, m, core: !!isCore,
+      pulses: [now], lastPulse: now, born: now
+    });
+  }
+
+  function seed(){
+    attractors.length = 0;
+    addAttractor(W * 0.5, H * 0.5, CENTRAL_M, true);
+    resetParticles();
+  }
+
+  function clearAdded(){
+    for (let i = attractors.length - 1; i >= 0; i--){
+      if (!attractors[i].core) attractors.splice(i, 1);
+    }
+  }
+
+  function removeNearest(x, y){
+    let best = -1, bd = 70 * 70;
+    for (let i = 0; i < attractors.length; i++){
+      if (attractors[i].core) continue;
+      const dx = attractors[i].x - x, dy = attractors[i].y - y;
+      const d = dx * dx + dy * dy;
+      if (d < bd){ bd = d; best = i; }
+    }
+    if (best >= 0){ attractors.splice(best, 1); return true; }
+    return false;
+  }
+
+  // ---- physics (semi-implicit Euler, fixed timestep) -------------------
+  function step(){
+    const na = attractors.length;
+    const maxR = Math.hypot(W, H) * 0.72;
+    const cx = W * 0.5, cy = H * 0.5;
+    for (let i = 0; i < N; i++){
+      let ax = 0, ay = 0;
+      const x = px[i], y = py[i];
+      for (let j = 0; j < na; j++){
+        const a = attractors[j];
+        const dx = a.x - x, dy = a.y - y;
+        const d2 = dx * dx + dy * dy + SOFT2;
+        const inv = 1 / Math.sqrt(d2);
+        const f = G * a.m / d2;
+        ax += dx * inv * f;
+        ay += dy * inv * f;
+      }
+      let nvx = (vx[i] + ax) * DAMP;
+      let nvy = (vy[i] + ay) * DAMP;
+      const sp = Math.hypot(nvx, nvy);
+      if (sp > MAX_SPEED){ const s = MAX_SPEED / sp; nvx *= s; nvy *= s; }
+      vx[i] = nvx; vy[i] = nvy;
+      px[i] = x + nvx;
+      py[i] = y + nvy;
+      // keep the field alive: anything flung far out is reborn in the disk
+      const ddx = px[i] - cx, ddy = py[i] - cy;
+      if (ddx * ddx + ddy * ddy > maxR * maxR) respawn(i);
+    }
+  }
+
+  // ---- render -----------------------------------------------------------
+  function render(now){
+    // 1) fade the previous frame into the void (this makes the trails)
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = `rgba(4,5,13,${TRAIL_FADE})`;
+    ctx.fillRect(0, 0, W, H);
+
+    // 2) particles — additive so overlapping trails glow like a nebula
+    ctx.globalCompositeOperation = 'lighter';
+    const invMax = 1 / MAX_SPEED;
+    for (let i = 0; i < N; i++){
+      const sp = Math.hypot(vx[i], vy[i]);
+      let idx = (sp * invMax * 31) | 0;
+      if (idx > 31) idx = 31;
+      const x = px[i], y = py[i];
+      // soft halo
+      ctx.fillStyle = HALO[idx];
+      ctx.beginPath(); ctx.arc(x, y, 3.1, 0, 6.2831853); ctx.fill();
+      // bright core
+      ctx.fillStyle = PAL[idx];
+      ctx.beginPath(); ctx.arc(x, y, 1.55, 0, 6.2831853); ctx.fill();
+    }
+
+    // 3) attractors — glowing cores with breathing, expanding rings
+    for (let k = 0; k < attractors.length; k++){
+      const a = attractors[k];
+      const scale = Math.cbrt(a.m / CENTRAL_M);
+      const coreR = (a.core ? 9 : 11) * scale;
+
+      // birth pulse + periodic pulses
+      if (now - a.lastPulse > (a.core ? 1600 : 1100)){
+        a.pulses.push(now); a.lastPulse = now;
+      }
+      for (let p = a.pulses.length - 1; p >= 0; p--){
+        const age = (now - a.pulses[p]) / 1000;
+        const life = a.core ? 3.0 : 2.2;
+        if (age > life){ a.pulses.splice(p, 1); continue; }
+        const t = age / life;
+        const rad = 6 + age * (a.core ? 55 : 80);
+        const al = (1 - t) * (a.core ? 0.28 : 0.45);
+        ctx.strokeStyle = a.core
+          ? `rgba(150,190,255,${al})`
+          : `rgba(255,205,150,${al})`;
+        ctx.lineWidth = a.core ? 1.4 : 2;
+        ctx.beginPath(); ctx.arc(a.x, a.y, rad, 0, 6.2831853); ctx.stroke();
+      }
+
+      // halo gradient
+      const haloR = coreR * 4.2;
+      const g = ctx.createRadialGradient(a.x, a.y, 0, a.x, a.y, haloR);
+      if (a.core){
+        g.addColorStop(0.00, 'rgba(220,235,255,0.95)');
+        g.addColorStop(0.18, 'rgba(150,190,255,0.55)');
+        g.addColorStop(0.55, 'rgba(90,130,255,0.18)');
+        g.addColorStop(1.00, 'rgba(40,70,200,0)');
+      } else {
+        g.addColorStop(0.00, 'rgba(255,242,225,0.95)');
+        g.addColorStop(0.18, 'rgba(255,190,120,0.55)');
+        g.addColorStop(0.55, 'rgba(255,140,70,0.20)');
+        g.addColorStop(1.00, 'rgba(255,90,40,0)');
+      }
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(a.x, a.y, haloR, 0, 6.2831853); ctx.fill();
+
+      // hot core dot
+      ctx.fillStyle = a.core ? 'rgba(255,255,255,0.95)' : 'rgba(255,250,240,0.98)';
+      ctx.beginPath(); ctx.arc(a.x, a.y, coreR * 0.42, 0, 6.2831853); ctx.fill();
+    }
+
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
+  // ---- loop (fixed-step accumulator, frame-rate independent) -----------
+  const STEP = 1000 / 60;
+  let acc = 0, last = performance.now();
+  let fpsAcc = 0, fpsFrames = 0, fpsLast = last;
+
+  const elP  = document.getElementById('s-p');
+  const elA  = document.getElementById('s-a');
+  const elF  = document.getElementById('s-f');
+  const elPause = document.getElementById('pause');
+
+  function frame(now){
+    const dt = Math.min(now - last, 60);
+    last = now;
+    if (!paused){
+      acc += dt;
+      let guard = 0;
+      while (acc >= STEP && guard < 5){ step(); acc -= STEP; guard++; }
+    }
+    render(now);
+
+    // fps meter
+    fpsFrames++; fpsAcc += dt;
+    if (now - fpsLast > 500){
+      elF.textContent = Math.round(1000 * fpsFrames / fpsAcc);
+      fpsFrames = 0; fpsAcc = 0; fpsLast = now;
+    }
+    elA.textContent = attractors.length;
+    elP.textContent = N;
+
+    requestAnimationFrame(frame);
+  }
+
+  // ---- interaction ------------------------------------------------------
+  function pos(e){
+    const r = canvas.getBoundingClientRect();
+    return { x: e.clientX - r.left, y: e.clientY - r.top };
+  }
+
+  canvas.addEventListener('pointerdown', (e) => {
+    if (e.button === 2) return; // handled by contextmenu
+    const p = pos(e);
+    addAttractor(p.x, p.y, CLICK_M, false);
+    flash('attractor dropped');
+  });
+
+  canvas.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    const p = pos(e);
+    if (removeNearest(p.x, p.y)) flash('attractor removed');
+  });
+
+  let lastTouch = 0;
+  canvas.addEventListener('touchstart', (e) => {
+    // two-finger tap = remove nearest
+    if (e.touches.length >= 2){
+      const t = e.touches[0];
+      const r = canvas.getBoundingClientRect();
+      if (removeNearest(t.clientX - r.left, t.clientY - r.top)) flash('attractor removed');
+      e.preventDefault(); return;
+    }
+    const now = performance.now();
+    if (now - lastTouch < 300){
+      const t = e.touches[0];
+      const r = canvas.getBoundingClientRect();
+      if (removeNearest(t.clientX - r.left, t.clientY - r.top)) flash('attractor removed');
+    } else {
+      const t = e.touches[0];
+      const r = canvas.getBoundingClientRect();
+      addAttractor(t.clientX - r.left, t.clientY - r.top, CLICK_M, false);
+      flash('attractor dropped');
+    }
+    lastTouch = now;
+    e.preventDefault();
+  }, { passive:false });
+
+  window.addEventListener('keydown', (e) => {
+    const k = e.key.toLowerCase();
+    if (k === 'c'){ clearAdded(); flash('added attractors cleared'); }
+    else if (k === 'r'){ seed(); flash('universe reset'); }
+    else if (e.code === 'Space'){
+      paused = !paused;
+      elPause.classList.toggle('show', paused);
+      e.preventDefault();
+    }
+    else if (k === 'h'){
+      helpHidden = !helpHidden;
+      document.getElementById('legend').classList.toggle('hidden', helpHidden);
+    }
+  });
+
+  // ---- tiny toast -------------------------------------------------------
+  const elFlash = document.getElementById('flash');
+  let flashTimer = 0;
+  function flash(msg){
+    elFlash.textContent = msg;
+    elFlash.classList.add('show');
+    clearTimeout(flashTimer);
+    flashTimer = setTimeout(() => elFlash.classList.remove('show'), 900);
+  }
+
+  // ---- boot -------------------------------------------------------------
+  resize();
+  seed();
+  // hide the legend after a while so the field is unobstructed
+  setTimeout(() => {
+    if (!helpHidden) document.getElementById('legend').classList.add('hidden');
+  }, 9000);
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

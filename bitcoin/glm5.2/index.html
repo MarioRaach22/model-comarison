@@ -1,0 +1,946 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>BTC & XMR · Live Crypto Price Chart</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='48' fill='%23f7931a'/><text x='50' y='72' font-size='62' text-anchor='middle' fill='white' font-family='Arial' font-weight='bold'>%E2%82%BF</text></svg>" />
+<style>
+  :root {
+    --bg: #070a12; --bg-2: #0b0f1a; --card: #111726; --card-2: #161d30; --card-3: #1c2438;
+    --border: #232c44; --border-soft: #1a2236;
+    --text: #eef2fb; --text-dim: #8b97b4; --text-faint: #5a6580;
+    --btc: #f7931a; --xmr: #a855f7; --cyan: #38e1d6;
+    --green: #16c784; --red: #ea3943;
+    --shadow: 0 24px 60px -20px rgba(0,0,0,.7);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background:
+      radial-gradient(1200px 600px at 82% -10%, rgba(247,147,26,.10), transparent 60%),
+      radial-gradient(1000px 560px at -5% 100%, rgba(168,85,247,.10), transparent 55%),
+      var(--bg);
+    color: var(--text);
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    min-height: 100%;
+    display: flex; align-items: flex-start; justify-content: center;
+    padding: 32px 16px 48px;
+    -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+  }
+  .app { width: 100%; max-width: 960px; animation: rise .6s cubic-bezier(.22,.61,.36,1); }
+  @keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+
+  .card {
+    background: linear-gradient(180deg, var(--card) 0%, var(--bg-2) 100%);
+    border: 1px solid var(--border); border-radius: 22px; box-shadow: var(--shadow); overflow: hidden;
+  }
+
+  /* ---- Header ---- */
+  .top { display: flex; align-items: center; justify-content: space-between; padding: 22px 26px 18px; border-bottom: 1px solid var(--border-soft); }
+  .brand { display: flex; align-items: center; gap: 14px; }
+  .logo { width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; font-size: 22px; color: #fff; font-weight: 700;
+    background: linear-gradient(145deg, var(--btc), #ffae3b); box-shadow: 0 8px 22px -6px rgba(247,147,26,.5); }
+  .brand-text h1 { font-size: 17px; font-weight: 700; letter-spacing: .2px; }
+  .brand-text .sub { font-size: 12px; color: var(--text-dim); letter-spacing: .4px; }
+  .live { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-dim); }
+  .live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); animation: pulse 1.8s infinite; }
+  @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(22,199,132,.55); } 70% { box-shadow: 0 0 0 9px rgba(22,199,132,0); } 100% { box-shadow: 0 0 0 0 rgba(22,199,132,0); } }
+  .live.stale .live-dot { background: var(--text-faint); animation: none; }
+
+  /* ---- Price cards ---- */
+  .price-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; padding: 22px 26px 4px; }
+  .price-card { background: var(--card-2); border: 1px solid var(--border-soft); border-radius: 16px; padding: 16px 18px; position: relative; overflow: hidden; }
+  .price-card::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; }
+  .price-card[data-coin="BTC"]::before { background: linear-gradient(var(--btc), transparent); }
+  .price-card[data-coin="XMR"]::before { background: linear-gradient(var(--xmr), transparent); }
+  .pc-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .pc-logo { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; font-size: 16px; font-weight: 700; color: #fff; }
+  .price-card[data-coin="BTC"] .pc-logo { background: linear-gradient(145deg, var(--btc), #ffae3b); }
+  .price-card[data-coin="XMR"] .pc-logo { background: linear-gradient(145deg, var(--xmr), #c98bff); }
+  .pc-name { font-size: 14px; font-weight: 600; line-height: 1.1; }
+  .pc-sym { font-size: 11px; color: var(--text-faint); letter-spacing: .4px; }
+  .pc-price { font-size: 30px; font-weight: 700; letter-spacing: -.5px; font-variant-numeric: tabular-nums; line-height: 1; }
+  .pc-change { display: inline-flex; align-items: center; gap: 5px; margin-top: 9px; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums;
+    padding: 5px 10px; border-radius: 9px; background: rgba(22,199,132,.12); color: var(--green); border: 1px solid rgba(22,199,132,.22); }
+  .pc-change.down { background: rgba(234,57,67,.12); color: var(--red); border-color: rgba(234,57,67,.22); }
+  .pc-change .arrow { font-size: 10px; }
+  .pc-change .pct { opacity: .85; }
+  .pc-stats { display: flex; gap: 14px; margin-top: 12px; font-size: 11px; color: var(--text-faint); font-variant-numeric: tabular-nums; }
+  .pc-stats span b { color: var(--text-dim); font-weight: 500; margin-right: 3px; }
+
+  @keyframes flashUp   { 0% { color: var(--green); text-shadow: 0 0 22px rgba(22,199,132,.5); } 100% { color: var(--text); text-shadow: none; } }
+  @keyframes flashDown { 0% { color: var(--red);   text-shadow: 0 0 22px rgba(234,57,67,.5); } 100% { color: var(--text); text-shadow: none; } }
+  .pc-price.flash-up   { animation: flashUp   .6s ease-out; }
+  .pc-price.flash-down { animation: flashDown .6s ease-out; }
+
+  /* ---- 7D performance row ---- */
+  .perf-row { display: flex; align-items: center; gap: 14px; padding: 14px 26px; border-top: 1px solid var(--border-soft); border-bottom: 1px solid var(--border-soft); flex-wrap: wrap; }
+  .perf-title { font-size: 11px; color: var(--text-faint); text-transform: uppercase; letter-spacing: .6px; }
+  .perf-items { display: flex; flex-direction: column; gap: 7px; flex: 1; min-width: 240px; }
+  .perf-item { display: flex; align-items: center; gap: 9px; font-size: 12.5px; }
+  .perf-item .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .perf-item .name { width: 30px; color: var(--text-dim); font-weight: 600; }
+  .perf-bar { flex: 1; height: 9px; background: var(--card-3); border-radius: 5px; position: relative; overflow: hidden; }
+  .perf-bar::before { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: var(--border); z-index: 1; }
+  .perf-fill { position: absolute; top: 0; bottom: 0; border-radius: 4px; transition: width .55s cubic-bezier(.22,.61,.36,1), left .55s cubic-bezier(.22,.61,.36,1), background .3s; }
+  .perf-val { font-variant-numeric: tabular-nums; font-weight: 600; min-width: 60px; text-align: right; }
+  .perf-val.up { color: var(--green); } .perf-val.down { color: var(--red); }
+  .perf-lead { font-size: 12px; color: var(--text-dim); display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .perf-lead b { font-weight: 700; }
+
+  /* ---- Chart header / controls ---- */
+  .chart-head { padding: 20px 26px 0; display: flex; flex-direction: column; gap: 12px; }
+  .chart-head .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .legend { display: flex; align-items: center; gap: 16px; font-size: 12.5px; }
+  .lg-item { display: flex; align-items: center; gap: 7px; color: var(--text-dim); transition: opacity .3s; }
+  .lg-item .dot { width: 10px; height: 10px; border-radius: 50%; }
+  .lg-item.active { color: var(--text); }
+  .lg-item.inactive { opacity: .3; }
+
+  .seg { position: relative; display: inline-flex; gap: 2px; background: var(--card-2); border: 1px solid var(--border-soft); border-radius: 11px; padding: 4px; }
+  .seg button { position: relative; z-index: 1; appearance: none; border: 0; background: transparent; color: var(--text-dim); cursor: pointer;
+    font: 600 12.5px/1 ui-sans-serif, system-ui, sans-serif; padding: 8px 14px; border-radius: 8px;
+    transition: color .2s; letter-spacing: .3px; }
+  .seg button:hover { color: var(--text); }
+  .seg-ind { position: absolute; top: 4px; bottom: 4px; left: 4px; border-radius: 8px; z-index: 0;
+    transition: transform .38s cubic-bezier(.22,.61,.36,1), width .38s cubic-bezier(.22,.61,.36,1), background .28s, box-shadow .28s; }
+  .view-seg[data-active="btc"] .seg-ind     { background: rgba(247,147,26,.16); box-shadow: inset 0 0 0 1px rgba(247,147,26,.32); }
+  .view-seg[data-active="xmr"] .seg-ind     { background: rgba(168,85,247,.16); box-shadow: inset 0 0 0 1px rgba(168,85,247,.32); }
+  .view-seg[data-active="compare"] .seg-ind { background: rgba(56,225,214,.14); box-shadow: inset 0 0 0 1px rgba(56,225,214,.30); }
+  .view-seg[data-active="btc"] button[data-view="btc"],
+  .view-seg[data-active="xmr"] button[data-view="xmr"],
+  .view-seg[data-active="compare"] button[data-view="compare"] { color: var(--text); }
+  .range-seg .seg-ind { background: rgba(247,147,26,.15); box-shadow: inset 0 0 0 1px rgba(247,147,26,.28); }
+  .range-seg button.active { color: var(--btc); }
+
+  .sub-toggle { display: none; align-items: center; gap: 8px; }
+  .sub-toggle.show { display: inline-flex; }
+  .sub-toggle .lbl { font-size: 11px; color: var(--text-faint); text-transform: uppercase; letter-spacing: .5px; }
+  .cmp-seg .seg-ind { background: rgba(56,225,214,.14); box-shadow: inset 0 0 0 1px rgba(56,225,214,.28); }
+  .cmp-seg button.active { color: var(--cyan); }
+
+  .chart-title { font-size: 13px; color: var(--text-dim); letter-spacing: .3px; }
+  .chart-title b { color: var(--text); font-weight: 600; }
+
+  /* ---- Chart ---- */
+  .chart-wrap { position: relative; padding: 10px 18px 20px; height: 400px; }
+  #chart { display: block; width: 100%; height: 100%; cursor: crosshair; }
+
+  .tooltip { position: absolute; display: none; pointer-events: none; background: rgba(8,11,20,.93); border: 1px solid var(--border);
+    border-radius: 11px; padding: 9px 12px; font-size: 12px; line-height: 1.5; box-shadow: 0 10px 28px -8px rgba(0,0,0,.8);
+    backdrop-filter: blur(6px); z-index: 5; white-space: nowrap; }
+  .tt-time { color: var(--text-dim); font-size: 11px; margin-bottom: 4px; }
+  .tt-row { display: flex; align-items: center; gap: 7px; font-variant-numeric: tabular-nums; }
+  .tt-row .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .tt-row .sym { color: var(--text-dim); font-weight: 600; width: 30px; }
+  .tt-row .val { color: var(--text); font-weight: 700; }
+  .tt-row .pct { font-size: 11px; font-weight: 600; margin-left: 2px; }
+  .tt-row .pct.up { color: var(--green); } .tt-row .pct.down { color: var(--red); }
+
+  .overlay { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; flex-direction: column; gap: 12px;
+    background: rgba(7,10,18,.55); backdrop-filter: blur(3px); z-index: 6; }
+  .overlay.show { display: flex; }
+  .spinner { width: 30px; height: 30px; border-radius: 50%; border: 3px solid rgba(255,255,255,.12); border-top-color: var(--btc); animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .overlay .msg { font-size: 13px; color: var(--text-dim); text-align: center; padding: 0 24px; }
+  .retry { margin-top: 4px; cursor: pointer; background: var(--btc); color: #1a1206; border: 0; font: 700 12.5px/1 ui-sans-serif, system-ui, sans-serif;
+    padding: 9px 16px; border-radius: 9px; transition: filter .15s, transform .1s; }
+  .retry:hover { filter: brightness(1.08); } .retry:active { transform: translateY(1px); }
+
+  .foot { padding: 12px 26px 18px; font-size: 11px; color: var(--text-faint); display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+  .foot a { color: var(--text-faint); text-decoration: none; } .foot a:hover { color: var(--text-dim); }
+
+  @media (max-width: 580px) {
+    .price-cards { grid-template-columns: 1fr; }
+    .pc-price { font-size: 26px; }
+    .chart-wrap { height: 330px; padding: 10px 6px 18px; }
+    .top, .price-cards, .perf-row, .chart-head, .foot { padding-left: 18px; padding-right: 18px; }
+    .legend { gap: 12px; }
+  }
+</style>
+</head>
+<body>
+  <div class="app">
+    <div class="card">
+      <!-- Header -->
+      <div class="top">
+        <div class="brand">
+          <div class="logo">₿</div>
+          <div class="brand-text">
+            <h1>Bitcoin &amp; Monero</h1>
+            <div class="sub">BTC / XMR · USD · LIVE</div>
+          </div>
+        </div>
+        <div class="live" id="liveBadge"><span class="live-dot"></span><span id="liveText">Live</span></div>
+      </div>
+
+      <!-- Price cards -->
+      <div class="price-cards">
+        <div class="price-card" data-coin="BTC">
+          <div class="pc-head"><div class="pc-logo">₿</div><div><div class="pc-name">Bitcoin</div><div class="pc-sym">BTC / USD</div></div></div>
+          <div class="pc-price" id="btcPrice">—</div>
+          <div class="pc-change" id="btcChange">—</div>
+          <div class="pc-stats"><span><b>H</b><span id="btcHigh">—</span></span><span><b>L</b><span id="btcLow">—</span></span><span><b>Vol</b><span id="btcVol">—</span></span></div>
+        </div>
+        <div class="price-card" data-coin="XMR">
+          <div class="pc-head"><div class="pc-logo">ɱ</div><div><div class="pc-name">Monero</div><div class="pc-sym">XMR / USD</div></div></div>
+          <div class="pc-price" id="xmrPrice">—</div>
+          <div class="pc-change" id="xmrChange">—</div>
+          <div class="pc-stats"><span><b>H</b><span id="xmrHigh">—</span></span><span><b>L</b><span id="xmrLow">—</span></span><span><b>Vol</b><span id="xmrVol">—</span></span></div>
+        </div>
+      </div>
+
+      <!-- 7D performance comparison -->
+      <div class="perf-row">
+        <div class="perf-title">7D Performance</div>
+        <div class="perf-items">
+          <div class="perf-item">
+            <span class="dot" style="background:var(--btc)"></span>
+            <span class="name">BTC</span>
+            <div class="perf-bar"><div class="perf-fill" id="btcPerfFill"></div></div>
+            <span class="perf-val" id="btcPerfVal">—</span>
+          </div>
+          <div class="perf-item">
+            <span class="dot" style="background:var(--xmr)"></span>
+            <span class="name">XMR</span>
+            <div class="perf-bar"><div class="perf-fill" id="xmrPerfFill"></div></div>
+            <span class="perf-val" id="xmrPerfVal">—</span>
+          </div>
+        </div>
+        <div class="perf-lead" id="perfLead">—</div>
+      </div>
+
+      <!-- Chart controls -->
+      <div class="chart-head">
+        <div class="row">
+          <div class="legend" id="legend">
+            <div class="lg-item" data-coin="BTC"><span class="dot" style="background:var(--btc)"></span>Bitcoin</div>
+            <div class="lg-item" data-coin="XMR"><span class="dot" style="background:var(--xmr)"></span>Monero</div>
+          </div>
+          <div class="seg view-seg" id="viewSeg" data-active="btc">
+            <div class="seg-ind" id="viewInd"></div>
+            <button data-view="btc">BTC</button>
+            <button data-view="xmr">XMR</button>
+            <button data-view="compare">Compare</button>
+          </div>
+        </div>
+        <div class="row">
+          <div class="sub-toggle" id="subToggle">
+            <span class="lbl">Compare</span>
+            <div class="seg cmp-seg" id="cmpSeg" data-active="percent">
+              <div class="seg-ind" id="cmpInd"></div>
+              <button data-cmp="percent" class="active">Normalized %</button>
+              <button data-cmp="dual">Dual Axis</button>
+            </div>
+          </div>
+          <div class="chart-title" id="chartTitle">Price · <b id="rangeLabel">24H</b></div>
+          <div class="seg range-seg" id="rangeSeg" data-active="24H">
+            <div class="seg-ind" id="rangeInd"></div>
+            <button data-range="1H">1H</button>
+            <button data-range="24H" class="active">24H</button>
+            <button data-range="7D">7D</button>
+            <button data-range="30D">30D</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Chart -->
+      <div class="chart-wrap" id="chartWrap">
+        <canvas id="chart"></canvas>
+        <div class="tooltip" id="tooltip"></div>
+        <div class="overlay" id="chartLoading"><div class="spinner"></div><div class="msg">Loading market data…</div></div>
+        <div class="overlay" id="chartError">
+          <div class="msg" id="errorMsg">Couldn’t reach the market data API.</div>
+          <button class="retry" id="retryBtn">Retry</button>
+        </div>
+      </div>
+
+      <div class="foot">
+        <span id="updated">—</span>
+        <span id="sourceNote">BTC: Binance · XMR: CoinGecko · auto-refresh 10s</span>
+      </div>
+    </div>
+  </div>
+
+<script>
+"use strict";
+/* ======================================================================
+   Config
+   ====================================================================== */
+const COINS = {
+  BTC: { id: "bitcoin", symbol: "BTC", color: "#f7931a", rgb: "247,147,26",  binance: "BTCUSDT" },
+  XMR: { id: "monero",  symbol: "XMR", color: "#a855f7", rgb: "168,85,247",  binance: null     },
+};
+const RANGES = {
+  "1H":  { bn: "1m",  limit: 60,  cgDays: 1 },
+  "24H": { bn: "15m", limit: 96,  cgDays: 1 },
+  "7D":  { bn: "1h",  limit: 168, cgDays: 7,  sparkline: true },
+  "30D": { bn: "4h",  limit: 180, cgDays: 30 },
+};
+const BINANCE_HOSTS = [
+  "https://api.binance.com", "https://data-api.binance.vision",
+  "https://api1.binance.com", "https://api2.binance.com", "https://api3.binance.com",
+];
+const CG_BASE = "https://api.coingecko.com/api/v3";
+const REFRESH_MS = 10000;
+const ANIM_RANGE = 950, ANIM_VIEW = 620, ANIM_CMP = 520, ANIM_LIVE = 650;
+const N = 170;
+
+/* ======================================================================
+   DOM
+   ====================================================================== */
+const $ = id => document.getElementById(id);
+const canvas = $("chart"), ctx = canvas.getContext("2d");
+const tooltipEl = $("tooltip"), chartWrap = $("chartWrap");
+const chartLoading = $("chartLoading"), chartError = $("chartError");
+const errorMsg = $("errorMsg"), retryBtn = $("retryBtn");
+const rangeLabel = $("rangeLabel"), updatedEl = $("updated");
+const liveBadge = $("liveBadge"), liveText = $("liveText");
+const viewSeg = $("viewSeg"), viewInd = $("viewInd");
+const rangeSeg = $("rangeSeg"), rangeInd = $("rangeInd");
+const cmpSeg = $("cmpSeg"), cmpInd = $("cmpInd");
+const subToggle = $("subToggle");
+const legendEl = $("legend");
+
+/* ======================================================================
+   State
+   ====================================================================== */
+let view = "btc", range = "24H", cmpMode = "percent";
+let byRange = { BTC: {}, XMR: {} };     // coin -> range -> pts[{time,price}]
+let markets = null;                     // last /coins/markets array
+let marketsOk = false;
+let ticker = { BTC: {}, XMR: {} };      // live stats per coin
+let lastPrice = { BTC: null, XMR: null };
+let lastUpdate = 0;
+let sourceBTC = "Binance", sourceXMR = "CoinGecko";
+
+// Transition state. S = target, P = snapshot-before. disp computed each frame.
+let S = { mode: "abs", t0: 0, t1: 0,
+          sampled: { BTC: null, XMR: null }, op: { BTC: 0, XMR: 0 },
+          axis: { BTC: "left", XMR: "left" }, edge: { BTC: 0, XMR: 0 },
+          left: [0, 1], right: [0, 1] };
+let P = { sampled: { BTC: null, XMR: null }, op: { BTC: 0, XMR: 0 }, left: [0, 1], right: [0, 1] };
+let anim = { on: false, start: 0, dur: 950, crossfade: false, rangeChanged: false };
+let hover = null;
+let cssW = 0, cssH = 0, rafPending = false;
+
+/* ======================================================================
+   Fetching — Binance (BTC) + CoinGecko (both, keyless, CORS *)
+   ====================================================================== */
+async function binanceGet(path) {
+  let last;
+  for (const h of BINANCE_HOSTS) {
+    try { const r = await fetch(h + path); if (!r.ok) throw new Error("HTTP " + r.status); return await r.json(); }
+    catch (e) { last = e; }
+  }
+  throw last || new Error("Binance unreachable");
+}
+async function cgGet(path) {
+  const r = await fetch(CG_BASE + path);
+  if (!r.ok) throw new Error("HTTP " + r.status);
+  return await r.json();
+}
+
+// One call -> BOTH coins' price, 24h change, 7d/30d %, high/low/vol, 7d sparkline
+async function fetchMarkets() {
+  const d = await cgGet("/coins/markets?vs_currency=usd&ids=bitcoin,monero&sparkline=true&price_change_percentage=24h,7d,30d");
+  const byId = {};
+  for (const c of d) byId[c.id] = c;
+  return byId;
+}
+async function fetchBinanceTicker() {
+  const d = await binanceGet("/api/v3/ticker/24hr?symbol=BTCUSDT");
+  return { price: +d.lastPrice, change: +d.priceChange, changePercent: +d.priceChangePercent,
+           high: +d.highPrice, low: +d.lowPrice, quoteVolume: +d.quoteVolume };
+}
+async function fetchKlinesBinance(coin, rng) {
+  const cfg = RANGES[rng];
+  const d = await binanceGet(`/api/v3/klines?symbol=${COINS[coin].binance}&interval=${cfg.bn}&limit=${cfg.limit}`);
+  return d.map(k => ({ time: k[0], price: +k[4] }));
+}
+async function fetchKlinesCoinGecko(coin, rng) {
+  const cfg = RANGES[rng];
+  const days = cfg.cgDays;
+  const r = await cgGet(`/coins/${COINS[coin].id}/market_chart?vs_currency=usd&days=${days}`);
+  let p = r.prices.map(x => ({ time: x[0], price: x[1] }));
+  if (rng === "1H") {
+    const cut = Date.now() - 60 * 60 * 1000;
+    const f = p.filter(x => x.time >= cut);
+    p = (f.length >= 2) ? f : p.slice(-60);
+  }
+  return p;
+}
+
+/* ======================================================================
+   Math helpers
+   ====================================================================== */
+function interpAtTime(pts, t) {
+  if (!pts || !pts.length) return NaN;
+  if (t <= pts[0].time) return pts[0].price;
+  const last = pts[pts.length - 1];
+  if (t >= last.time) return last.price;
+  let lo = 0, hi = pts.length - 1;
+  while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (pts[mid].time <= t) lo = mid; else hi = mid; }
+  const a = pts[lo], b = pts[hi], f = (t - a.time) / (b.time - a.time);
+  return a.price + (b.price - a.price) * f;
+}
+function resampleOver(pts, t0, t1) {
+  const out = new Array(N);
+  if (!pts || !pts.length) { out.fill(NaN); return out; }
+  for (let i = 0; i < N; i++) out[i] = interpAtTime(pts, t0 + (i / (N - 1)) * (t1 - t0));
+  return out;
+}
+function lerpArr(a, b, t) { const out = new Array(N); for (let i = 0; i < N; i++) out[i] = a[i] + (b[i] - a[i]) * t; return out; }
+function lerpB(a, b, t) { return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]; }
+function easeInOutCubic(t) { return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; }
+function bounds(arr) {
+  let mn = Infinity, mx = -Infinity;
+  for (const v of arr) { if (isNaN(v)) continue; if (v < mn) mn = v; if (v > mx) mx = v; }
+  if (mn === Infinity) { mn = 0; mx = 1; }
+  if (mn === mx) { mn -= 1; mx += 1; }
+  const pad = (mx - mn) * 0.14;
+  return [mn - pad, mx + pad];
+}
+function boundsBoth(a, b) {
+  let mn = Infinity, mx = -Infinity;
+  for (const arr of [a, b]) for (const v of arr) { if (isNaN(v)) continue; if (v < mn) mn = v; if (v > mx) mx = v; }
+  if (mn === Infinity) { mn = 0; mx = 1; }
+  if (mn === mx) { mn -= 1; mx += 1; }
+  const pad = (mx - mn) * 0.14;
+  return [mn - pad, mx + pad];
+}
+function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+
+/* ======================================================================
+   Transition engine
+   ====================================================================== */
+function progress() {
+  if (!anim.on) return 1;
+  const t = (performance.now() - anim.start) / anim.dur;
+  if (t >= 1) { anim.on = false; return 1; }
+  return Math.max(0, t);
+}
+function unitCategory(m) { return m === "pct" ? "pct" : "abs"; }
+
+function computeSampled(coin, mode, t0, t1) {
+  const pts = byRange[coin][range];
+  let s = resampleOver(pts, t0, t1);
+  if (mode === "pct") { const base = s[0] || 1; s = s.map(v => (v - base) / base * 100); }
+  return s;
+}
+
+function neededCoins(v) { return v === "btc" ? ["BTC"] : v === "xmr" ? ["XMR"] : ["BTC", "XMR"]; }
+
+function applyTransition(v, rng, m, dur, rangeChanged) {
+  const mode = v === "compare" ? (m === "dual" ? "dual" : "pct") : "abs";
+  const visible = neededCoins(v);
+
+  // union time domain across visible coins
+  let t0 = Infinity, t1 = -Infinity;
+  for (const c of visible) { const p = byRange[c][rng]; if (p && p.length) { t0 = Math.min(t0, p[0].time); t1 = Math.max(t1, p[p.length - 1].time); } }
+  if (t0 === Infinity) { t0 = 0; t1 = 1; }
+
+  // snapshot previous displayed state into P
+  const prevCat = unitCategory(S.mode), currCat = unitCategory(mode);
+  const crossfade = prevCat !== currCat;
+  const curP = anim.on ? easeInOutCubic(progress()) : 1;
+  for (const c of ["BTC", "XMR"]) {
+    const curOp = anim.on ? P.op[c] + (S.op[c] - P.op[c]) * curP : S.op[c];
+    const curSamp = anim.on ? lerpArr(P.sampled[c], S.sampled[c], curP) : S.sampled[c];
+    P.op[c] = curOp;
+    const wasVisible = curOp > 0.01;
+    P.sampled[c] = (wasVisible && !crossfade) ? curSamp : null; // null -> set to curr below
+  }
+  const curLeft = anim.on ? lerpB(P.left, S.left, curP) : S.left;
+  const curRight = anim.on ? lerpB(P.right, S.right, curP) : S.right;
+
+  // compute target S
+  S.mode = mode; S.t0 = t0; S.t1 = t1;
+  for (const c of ["BTC", "XMR"]) {
+    if (visible.includes(c)) {
+      S.sampled[c] = computeSampled(c, mode, t0, t1);
+      S.op[c] = 1;
+      S.edge[c] = interpAtTime(byRange[c][rng], t0);
+      S.axis[c] = (mode === "dual") ? (c === "BTC" ? "left" : "right") : "left";
+    } else {
+      S.sampled[c] = (P.sampled[c] && !crossfade) ? P.sampled[c] : resampleOver(byRange[c][rng], t0, t1);
+      S.op[c] = 0;
+      S.axis[c] = "left";
+    }
+    if (P.sampled[c] === null) P.sampled[c] = S.sampled[c]; // no shape morph (hidden/unit-change)
+  }
+
+  // bounds
+  if (mode === "pct") {
+    const b = boundsBoth(S.sampled.BTC, S.sampled.XMR);
+    S.left = b; S.right = b;
+  } else if (mode === "dual") {
+    S.left = bounds(S.sampled.BTC);
+    S.right = bounds(S.sampled.XMR);
+  } else {
+    const vis = visible[0];
+    const b = bounds(S.sampled[vis]); S.left = b; S.right = b;
+  }
+  // prev bounds: keep current if same unit, else snap to target
+  P.left  = (prevCat === currCat) ? curLeft  : S.left;
+  P.right = (prevCat === currCat && S.mode === "dual" && P.right && P.right[0] !== 0 ? curRight : S.right);
+  // if right axis newly appearing, snap prev to target (fade in via opacity)
+  if (mode === "dual" && !(P.right[0] === 0 && P.right[1] === 1) && false) P.right = curRight;
+
+  anim.on = true; anim.start = performance.now(); anim.dur = dur;
+  anim.crossfade = crossfade; anim.rangeChanged = !!rangeChanged;
+  requestFrame();
+  updateLegend();
+}
+
+/* ======================================================================
+   Rendering
+   ====================================================================== */
+function chartArea() {
+  const padL = 60, padR = 60, padT = 14, padB = 26;
+  return { x: padL, y: padT, w: cssW - padL - padR, h: cssH - padT - padB };
+}
+function requestFrame() { if (rafPending) return; rafPending = true; requestAnimationFrame(() => { rafPending = false; draw(); if (anim.on) requestFrame(); }); }
+
+function dispState() {
+  const p = anim.on ? easeInOutCubic(progress()) : 1;
+  const dip = anim.crossfade ? (1 - 4 * p * (1 - p)) : 1;
+  const sampled = {}, op = {};
+  for (const c of ["BTC", "XMR"]) {
+    sampled[c] = anim.on ? lerpArr(P.sampled[c], S.sampled[c], p) : S.sampled[c];
+    op[c] = anim.on ? P.op[c] + (S.op[c] - P.op[c]) * p : S.op[c];
+  }
+  const left  = anim.on ? lerpB(P.left,  S.left,  p) : S.left;
+  const right = anim.on ? lerpB(P.right, S.right, p) : S.right;
+  return { p, dip, sampled, op, left, right };
+}
+
+function draw() {
+  ctx.clearRect(0, 0, cssW, cssH);
+  if (!S.sampled.BTC && !S.sampled.XMR) return;
+  const area = chartArea();
+  if (area.w <= 0 || area.h <= 0) return;
+  const d = dispState();
+
+  // y labels (left)
+  const leftAlpha  = Math.max(d.op.BTC * (S.axis.BTC === "left" ? 1 : 0), d.op.XMR * (S.axis.XMR === "left" ? 1 : 0)) * (anim.crossfade ? d.dip : 1);
+  const rightAlpha = Math.max(d.op.BTC * (S.axis.BTC === "right" ? 1 : 0), d.op.XMR * (S.axis.XMR === "right" ? 1 : 0)) * (anim.crossfade ? d.dip : 1);
+  const leftBounds  = anim.crossfade ? S.left  : d.left;
+  const rightBounds = anim.crossfade ? S.right : d.right;
+  if (leftAlpha > 0.01)  drawYLabels(area, leftBounds,  leftAlpha,  "left",  S.mode);
+  if (rightAlpha > 0.01) drawYLabels(area, rightBounds, rightAlpha, "right", S.mode);
+
+  // x labels
+  const xAlpha = anim.on ? (anim.crossfade ? d.dip : (anim.rangeChanged ? d.dip : 1)) : 1;
+  if (xAlpha > 0.01) drawXLabels(area, xAlpha);
+
+  // 0% baseline in pct mode
+  if (S.mode === "pct") drawBaseline(area, d.left, leftAlpha);
+
+  // series (draw hidden ones too so they fade out gracefully)
+  for (const c of ["BTC", "XMR"]) {
+    const a = d.op[c] * (anim.crossfade ? d.dip : 1);
+    if (a < 0.01) continue;
+    const b = (S.axis[c] === "right") ? (anim.crossfade ? S.right : d.right) : (anim.crossfade ? S.left : d.left);
+    drawSeries(area, d.sampled[c], b, COINS[c], a);
+  }
+
+  if (hover) drawHover(area, d);
+}
+
+function mapY(area, val, b) {
+  const [mn, mx] = b;
+  return area.y + area.h - ((val - mn) / (mx - mn)) * area.h;
+}
+function Xn(area, i) { return area.x + (i / (N - 1)) * area.w; }
+
+function drawSeries(area, s, b, coin, alpha) {
+  const X = i => Xn(area, i), Y = v => mapY(area, v, b);
+  const rgb = coin.rgb;
+  // area fill
+  const grad = ctx.createLinearGradient(0, area.y, 0, area.y + area.h);
+  grad.addColorStop(0, `rgba(${rgb},${0.28 * alpha})`);
+  grad.addColorStop(0.75, `rgba(${rgb},${0.04 * alpha})`);
+  grad.addColorStop(1, `rgba(${rgb},0)`);
+  ctx.globalAlpha = alpha;
+  ctx.beginPath();
+  ctx.moveTo(X(0), Y(s[0]));
+  for (let i = 1; i < N; i++) ctx.lineTo(X(i), Y(s[i]));
+  ctx.lineTo(X(N - 1), area.y + area.h);
+  ctx.lineTo(X(0), area.y + area.h);
+  ctx.closePath();
+  ctx.fillStyle = grad;
+  ctx.fill();
+  // line
+  ctx.beginPath();
+  ctx.moveTo(X(0), Y(s[0]));
+  for (let i = 1; i < N; i++) ctx.lineTo(X(i), Y(s[i]));
+  ctx.lineWidth = 2.25;
+  ctx.strokeStyle = coin.color;
+  ctx.lineJoin = "round"; ctx.lineCap = "round";
+  ctx.shadowColor = `rgba(${rgb},${0.45 * alpha})`;
+  ctx.shadowBlur = 14;
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+  // live edge dot
+  ctx.beginPath();
+  ctx.arc(X(N - 1), Y(s[N - 1]), 3.5, 0, Math.PI * 2);
+  ctx.fillStyle = coin.color;
+  ctx.fill();
+  ctx.globalAlpha = 1;
+}
+
+function drawYLabels(area, b, alpha, side, mode) {
+  const lines = 5;
+  ctx.globalAlpha = alpha;
+  ctx.font = "11px ui-sans-serif, system-ui, sans-serif";
+  ctx.textBaseline = "middle";
+  const x = side === "left" ? area.x - 8 : area.x + area.w + 8;
+  ctx.textAlign = side === "left" ? "right" : "left";
+  ctx.strokeStyle = "rgba(255,255,255,0.045)";
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= lines; i++) {
+    const v = b[0] + (b[1] - b[0]) * (1 - i / lines);
+    const yy = area.y + (i / lines) * area.h;
+    ctx.beginPath(); ctx.moveTo(area.x, yy); ctx.lineTo(area.x + area.w, yy); ctx.stroke();
+    ctx.fillStyle = "rgba(139,151,180,0.9)";
+    ctx.fillText(mode === "pct" ? fmtPctShort(v) : fmtPriceShort(v), x, yy);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawXLabels(area, alpha) {
+  const count = 6;
+  ctx.globalAlpha = alpha;
+  ctx.textAlign = "center"; ctx.textBaseline = "top";
+  ctx.fillStyle = "rgba(139,151,180,0.9)";
+  ctx.font = "11px ui-sans-serif, system-ui, sans-serif";
+  for (let i = 0; i <= count; i++) {
+    const tt = S.t0 + (S.t1 - S.t0) * (i / count);
+    ctx.fillText(fmtTime(tt, range), area.x + (i / count) * area.w, area.y + area.h + 8);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawBaseline(area, b, alpha) {
+  const y = mapY(area, 0, b);
+  if (y < area.y || y > area.y + area.h) return;
+  ctx.globalAlpha = alpha;
+  ctx.strokeStyle = "rgba(255,255,255,0.22)";
+  ctx.setLineDash([5, 5]); ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(area.x, y); ctx.lineTo(area.x + area.w, y); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.globalAlpha = 1;
+}
+
+function drawHover(area, d) {
+  if (hover.x < area.x || hover.x > area.x + area.w) { tooltipEl.style.display = "none"; return; }
+  const t = S.t0 + (S.t1 - S.t0) * ((hover.x - area.x) / area.w);
+  ctx.strokeStyle = "rgba(255,255,255,0.18)"; ctx.setLineDash([4, 4]); ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(hover.x, area.y); ctx.lineTo(hover.x, area.y + area.h); ctx.stroke();
+  ctx.setLineDash([]);
+  const rows = [];
+  for (const c of ["BTC", "XMR"]) {
+    if (S.op[c] < 0.5) continue;
+    const pts = byRange[c][range]; if (!pts || !pts.length) continue;
+    const price = interpAtTime(pts, t);
+    const b = (S.axis[c] === "right") ? S.right : S.left;
+    let val = price, label = "$" + fmtPrice(price), pctTxt = "";
+    if (S.mode === "pct") { val = (price - S.edge[c]) / S.edge[c] * 100; label = "$" + fmtPrice(price); pctTxt = fmtSignedPct(val); }
+    const yy = mapY(area, val, b);
+    ctx.beginPath(); ctx.arc(hover.x, yy, 5.5, 0, Math.PI * 2);
+    ctx.fillStyle = COINS[c].color; ctx.fill();
+    ctx.lineWidth = 2.5; ctx.strokeStyle = "#070a12"; ctx.stroke();
+    rows.push({ c, price, pctTxt });
+  }
+  // tooltip
+  let html = `<div class="tt-time">${fmtTimeFull(t, range)}</div>`;
+  for (const r of rows) {
+    const up = r.pctTxt ? !r.pctTxt.startsWith("-") : null;
+    html += `<div class="tt-row"><span class="dot" style="background:${COINS[r.c].color}"></span>` +
+            `<span class="sym">${COINS[r.c].symbol}</span><span class="val">$${fmtPrice(r.price)}</span>` +
+            (r.pctTxt ? `<span class="pct ${up ? "up" : "down"}">${r.pctTxt}</span>` : "") + `</div>`;
+  }
+  tooltipEl.style.display = "block";
+  tooltipEl.innerHTML = html;
+  const r = tooltipEl.getBoundingClientRect();
+  let left = hover.x + 14;
+  if (left + r.width > cssW - 4) left = hover.x - r.width - 14;
+  if (left < 4) left = 4;
+  let top = hover.y - r.height - 12;
+  if (top < 4) top = hover.y + 12;
+  tooltipEl.style.left = left + "px";
+  tooltipEl.style.top = top + "px";
+}
+
+/* ======================================================================
+   Formatting
+   ====================================================================== */
+const nf0 = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
+const nf2 = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtPrice = v => nf2.format(v);
+function fmtPriceShort(v) { return v >= 1000 ? "$" + nf0.format(v) : "$" + nf2.format(v); }
+function fmtPctShort(v) { return (v >= 0 ? "+" : "") + nf2.format(v) + "%"; }
+function fmtSignedPct(v) { return (v >= 0 ? "+" : "−") + nf2.format(Math.abs(v)) + "%"; }
+function fmtCompact(v) { if (v == null) return "—"; if (v >= 1e9) return "$" + nf2.format(v / 1e9) + "B"; if (v >= 1e6) return "$" + nf2.format(v / 1e6) + "M"; if (v >= 1e3) return "$" + nf2.format(v / 1e3) + "K"; return "$" + nf0.format(v); }
+function fmtTime(ms, rng) {
+  const d = new Date(ms);
+  if (rng === "30D" || rng === "7D") return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  return d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
+}
+function fmtTimeFull(ms, rng) {
+  const d = new Date(ms);
+  if (rng === "30D" || rng === "7D") return d.toLocaleDateString("en-US", { month: "short", day: "numeric" }) + " · " + d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
+  return d.toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
+}
+
+/* ======================================================================
+   UI updates
+   ====================================================================== */
+function flashPriceEl(el, coin, p) {
+  if (lastPrice[coin] == null) { lastPrice[coin] = p; return; }
+  if (p === lastPrice[coin]) return;
+  const up = p > lastPrice[coin];
+  el.classList.remove("flash-up", "flash-down"); void el.offsetWidth;
+  el.classList.add(up ? "flash-up" : "flash-down");
+  lastPrice[coin] = p;
+}
+function setChange(el, chg, chgPct) {
+  const up = chgPct >= 0;
+  el.classList.toggle("down", !up);
+  el.innerHTML = `<span class="arrow">${up ? "▲" : "▼"}</span> $${fmtPrice(Math.abs(chg))} <span class="pct">(${up ? "+" : "−"}${nf2.format(Math.abs(chgPct))}%)</span>`;
+}
+function applyTicker(coin, t) {
+  if (t.price == null) return;
+  const pEl = $(coin.toLowerCase() + "Price");
+  pEl.textContent = "$" + fmtPrice(t.price);
+  flashPriceEl(pEl, coin, t.price);
+  setChange($(coin.toLowerCase() + "Change"), t.change, t.changePercent);
+  $(coin.toLowerCase() + "High").textContent = t.high != null ? "$" + fmtPrice(t.high) : "—";
+  $(coin.toLowerCase() + "Low").textContent  = t.low  != null ? "$" + fmtPrice(t.low)  : "—";
+  $(coin.toLowerCase() + "Vol").textContent  = fmtCompact(t.quoteVolume);
+  ticker[coin] = t;
+}
+function updatePerfRow(perf) {
+  const b = perf.BTC, x = perf.XMR;
+  const maxAbs = Math.max(Math.abs(b || 0), Math.abs(x || 0), 0.1);
+  setPerfBar("btc", b, maxAbs); setPerfBar("xmr", x, maxAbs);
+  const lead = $("perfLead");
+  if (b == null && x == null) { lead.innerHTML = "—"; return; }
+  if (b === x) { lead.innerHTML = "Tied"; }
+  else if (b > x) { lead.innerHTML = `<b style="color:var(--btc)">BTC</b> leading`; }
+  else { lead.innerHTML = `<b style="color:var(--xmr)">XMR</b> leading`; }
+}
+function setPerfBar(coin, pct, maxAbs) {
+  const fill = $(coin + "PerfFill"), val = $(coin + "PerfVal");
+  if (pct == null) { fill.style.width = "0%"; fill.style.left = "50%"; val.textContent = "—"; val.className = "perf-val"; return; }
+  const w = (Math.abs(pct) / maxAbs) * 50;
+  const up = pct >= 0;
+  fill.style.width = w + "%";
+  fill.style.left = (up ? 50 : (50 - w)) + "%";
+  fill.style.background = up ? "var(--green)" : "var(--red)";
+  val.textContent = fmtSignedPct(pct);
+  val.className = "perf-val " + (up ? "up" : "down");
+}
+function updateLegend() {
+  const vis = neededCoins(view);
+  [...legendEl.children].forEach(el => {
+    const c = el.dataset.coin;
+    el.classList.toggle("active", vis.includes(c));
+    el.classList.toggle("inactive", !vis.includes(c));
+  });
+}
+function updateUpdatedAgo() {
+  if (!lastUpdate) { updatedEl.textContent = "—"; return; }
+  const s = Math.round((Date.now() - lastUpdate) / 1000);
+  updatedEl.textContent = s <= 1 ? "Updated just now" : `Updated ${s}s ago`;
+}
+function setLive(ok) { liveBadge.classList.toggle("stale", !ok); liveText.textContent = ok ? "Live" : "Reconnecting…"; }
+function showChartLoading(on) { chartLoading.classList.toggle("show", on); }
+function showError(msg) { errorMsg.textContent = msg || "Couldn’t reach the market data API."; chartError.classList.add("show"); }
+function hideError() { chartError.classList.remove("show"); }
+
+/* ======================================================================
+   Segmented controls (sliding indicator)
+   ====================================================================== */
+function moveInd(seg, ind, btn) {
+  ind.style.width = btn.offsetWidth + "px";
+  ind.style.transform = `translateX(${btn.offsetLeft - 4}px)`;
+}
+function setupSeg(seg, ind, getActiveBtn) {
+  const pos = () => moveInd(seg, ind, getActiveBtn());
+  pos();
+  window.addEventListener("resize", pos);
+  if (window.ResizeObserver) new ResizeObserver(pos).observe(seg);
+  return pos;
+}
+
+/* ======================================================================
+   Data orchestration
+   ====================================================================== */
+async function ensureRange(coin, rng) {
+  if (byRange[coin][rng] && byRange[coin][rng].length >= 2) return byRange[coin][rng];
+  let pts;
+  if (rng === "7D" && markets && markets[COINS[coin].id] && markets[COINS[coin].id].sparkline_in_7d) {
+    pts = synthesizeSparkline(coin);
+  } else if (coin === "BTC") {
+    try { pts = await fetchKlinesBinance("BTC", rng); sourceBTC = "Binance"; }
+    catch (e) { pts = await fetchKlinesCoinGecko("BTC", rng); sourceBTC = "CoinGecko"; }
+  } else {
+    pts = await fetchKlinesCoinGecko("XMR", rng); sourceXMR = "CoinGecko";
+  }
+  byRange[coin][rng] = pts;
+  return pts;
+}
+function synthesizeSparkline(coin) {
+  const sp = markets[COINS[coin].id].sparkline_in_7d.price;
+  const t1 = Date.now(), t0 = t1 - 7 * 24 * 3600 * 1000;
+  return sp.map((p, i) => ({ time: t0 + (i / (sp.length - 1)) * (t1 - t0), price: p }));
+}
+
+async function loadRange(rng) {
+  showChartLoading(true);
+  try {
+    await Promise.all(neededCoins(view).map(c => ensureRange(c, rng)));
+    showChartLoading(false);
+    applyTransition(view, rng, cmpMode, ANIM_RANGE, true);
+    hideError(); setLive(true);
+  } catch (e) {
+    showChartLoading(false);
+    showError("Couldn’t load chart data. The API may be rate-limited or unreachable.");
+    setLive(false);
+  }
+}
+
+async function switchView(v) {
+  if (v === view) return;
+  view = v;
+  viewSeg.dataset.active = v;
+  moveInd(viewSeg, viewInd, viewSeg.querySelector(`button[data-view="${v}"]`));
+  subToggle.classList.toggle("show", v === "compare");
+  rangeLabel.textContent = range;
+  try {
+    await Promise.all(neededCoins(v).map(c => ensureRange(c, range)));
+    applyTransition(v, range, cmpMode, ANIM_VIEW, false);
+    setLive(true);
+  } catch (e) { setLive(false); }
+}
+
+function switchCmp(m) {
+  if (m === cmpMode || view !== "compare") return;
+  cmpMode = m;
+  cmpSeg.dataset.active = m;
+  moveInd(cmpSeg, cmpInd, cmpSeg.querySelector(`button[data-cmp="${m}"]`));
+  applyTransition(view, range, m, ANIM_CMP, false);
+}
+
+/* ---- Live refresh (every 10s) ---- */
+async function refreshLive() {
+  // Binance ticker for BTC (resilient, fresh) + CoinGecko markets for both (XMR + 7d perf + sparkline)
+  let binanceOk = false, cgOk = false;
+  const [binT, mk] = await Promise.allSettled([fetchBinanceTicker(), fetchMarkets()]);
+  if (binT.status === "fulfilled") {
+    applyTicker("BTC", binT.value);
+    sourceBTC = "Binance";
+    binanceOk = true;
+  }
+  if (mk.status === "fulfilled") {
+    markets = mk.value; marketsOk = true; cgOk = true;
+    const xb = markets[COINS.XMR.id];
+    if (xb) {
+      applyTicker("XMR", { price: xb.current_price, change: xb.current_price - (xb.current_price / (1 + (xb.price_change_percentage_24h_in_currency || 0) / 100)),
+        changePercent: xb.price_change_percentage_24h_in_currency || 0, high: xb.high_24h, low: xb.low_24, quoteVolume: xb.total_volume });
+    }
+    // 7d perf for both
+    const perf = { BTC: markets[COINS.BTC.id]?.price_change_percentage_7d_in_currency, XMR: markets[COINS.XMR.id]?.price_change_percentage_7d_in_currency };
+    updatePerfRow(perf);
+    // if Binance failed, use CoinGecko BTC price as fallback
+    if (!binanceOk && markets[COINS.BTC.id]) {
+      const bb = markets[COINS.BTC.id];
+      applyTicker("BTC", { price: bb.current_price, change: bb.current_price - (bb.current_price / (1 + (bb.price_change_percentage_24h_in_currency || 0) / 100)),
+        changePercent: bb.price_change_percentage_24h_in_currency || 0, high: bb.high_24h, low: bb.low_24h, quoteVolume: bb.total_volume });
+      sourceBTC = "CoinGecko";
+    }
+    // refresh 7D data from fresh sparkline (aligned), if present
+    if (markets[COINS.BTC.id]?.sparkline_in_7d) byRange.BTC["7D"] = synthesizeSparkline("BTC");
+    if (markets[COINS.XMR.id]?.sparkline_in_7d) byRange.XMR["7D"] = synthesizeSparkline("XMR");
+    // update live edge of the current range for both coins
+    updateLiveEdges();
+  }
+  lastUpdate = Date.now();
+  updateUpdatedAgo();
+  setSourceNote();
+  setLive(binanceOk || cgOk);
+}
+
+function updateLiveEdges() {
+  const updated = { BTC: false, XMR: false };
+  for (const c of ["BTC", "XMR"]) {
+    const p = byRange[c][range];
+    if (!p || !p.length || ticker[c].price == null) continue;
+    const next = p.slice();
+    next[next.length - 1] = { time: Date.now(), price: ticker[c].price };
+    byRange[c][range] = next;
+    updated[c] = true;
+  }
+  if (updated.BTC || updated.XMR) applyTransition(view, range, cmpMode, ANIM_LIVE, false);
+}
+
+function setSourceNote() {
+  $("sourceNote").textContent = `BTC: ${sourceBTC} · XMR: ${sourceXMR} · auto-refresh 10s`;
+}
+
+/* ======================================================================
+   Events
+   ====================================================================== */
+viewSeg.querySelectorAll("button").forEach(b => b.addEventListener("click", () => switchView(b.dataset.view)));
+cmpSeg.querySelectorAll("button").forEach(b => b.addEventListener("click", () => switchCmp(b.dataset.cmp)));
+rangeSeg.querySelectorAll("button").forEach(b => b.addEventListener("click", () => {
+  const r = b.dataset.range;
+  if (r === range) return;
+  range = r; rangeLabel.textContent = r;
+  rangeSeg.dataset.active = r;
+  rangeSeg.querySelectorAll("button").forEach(x => x.classList.toggle("active", x.dataset.range === r));
+  moveInd(rangeSeg, rangeInd, b);
+  loadRange(r);
+}));
+retryBtn.addEventListener("click", () => { hideError(); loadRange(range); refreshLive(); });
+
+canvas.addEventListener("mousemove", e => { const r = canvas.getBoundingClientRect(); hover = { x: e.clientX - r.left, y: e.clientY - r.top }; requestFrame(); });
+canvas.addEventListener("mouseleave", () => { hover = null; tooltipEl.style.display = "none"; requestFrame(); });
+canvas.addEventListener("touchstart", e => { if (!e.touches.length) return; const r = canvas.getBoundingClientRect(); hover = { x: e.touches[0].clientX - r.left, y: e.touches[0].clientY - r.top }; requestFrame(); }, { passive: true });
+canvas.addEventListener("touchmove", e => { if (!e.touches.length) return; const r = canvas.getBoundingClientRect(); hover = { x: e.touches[0].clientX - r.left, y: e.touches[0].clientY - r.top }; requestFrame(); }, { passive: true });
+canvas.addEventListener("touchend", () => { setTimeout(() => { hover = null; tooltipEl.style.display = "none"; requestFrame(); }, 1600); });
+
+function resize() {
+  const rect = canvas.getBoundingClientRect();
+  cssW = rect.width; cssH = rect.height;
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.max(1, Math.round(cssW * dpr));
+  canvas.height = Math.max(1, Math.round(cssH * dpr));
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  draw();
+}
+window.addEventListener("resize", resize);
+if (window.ResizeObserver) new ResizeObserver(resize).observe(canvas);
+
+/* ======================================================================
+   Init
+   ====================================================================== */
+(async function init() {
+  resize();
+  rangeLabel.textContent = range;
+  // sliding indicators
+  setupSeg(viewSeg, viewInd, () => viewSeg.querySelector(`button[data-view="${view}"]`));
+  setupSeg(cmpSeg, cmpInd, () => cmpSeg.querySelector(`button[data-cmp="${cmpMode}"]`));
+  setupSeg(rangeSeg, rangeInd, () => rangeSeg.querySelector(`button[data-range="${range}"]`));
+  updateLegend();
+  // first live data + chart
+  await Promise.all([refreshLive(), loadRange(range)]);
+  setInterval(refreshLive, REFRESH_MS);
+  setInterval(updateUpdatedAgo, 1000);
+})();
+</script>
+</body>
+</html>

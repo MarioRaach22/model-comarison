@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Model Bench — Ergebnisse</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface-2: #1c2430;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text-dim: #8b949e;
+    --accent: #58a6ff;
+    --accent-soft: rgba(88, 166, 255, 0.12);
+    --radius: 10px;
+  }
+
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f6f8fa;
+      --surface: #ffffff;
+      --surface-2: #f0f3f6;
+      --border: #d0d7de;
+      --text: #1f2328;
+      --text-dim: #656d76;
+      --accent: #0969da;
+      --accent-soft: rgba(9, 105, 218, 0.1);
+    }
+  }
+
+  html, body { height: 100%; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  header {
+    padding: 16px 20px 0;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    flex-shrink: 0;
+  }
+
+  .title-row {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 14px;
+  }
+
+  h1 { font-size: 1.15rem; font-weight: 700; letter-spacing: -0.01em; }
+  .subtitle { font-size: 0.8rem; color: var(--text-dim); }
+
+  /* Project tabs */
+  .tabs {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+  }
+
+  .tab {
+    appearance: none;
+    border: none;
+    background: transparent;
+    color: var(--text-dim);
+    font: inherit;
+    font-size: 0.9rem;
+    font-weight: 600;
+    padding: 10px 16px;
+    cursor: pointer;
+    border-radius: var(--radius) var(--radius) 0 0;
+    border-bottom: 2px solid transparent;
+    transition: color 0.15s, background 0.15s, border-color 0.15s;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .tab:hover { color: var(--text); background: var(--surface-2); }
+  .tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+  .tab .ico { font-size: 1rem; }
+
+  /* Model sub-tabs */
+  .subbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 20px;
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    flex-wrap: wrap;
+  }
+  .subbar .label {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-dim);
+    font-weight: 600;
+  }
+  .models { display: flex; gap: 6px; flex-wrap: wrap; }
+
+  .model-btn {
+    appearance: none;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-dim);
+    font: inherit;
+    font-size: 0.82rem;
+    font-weight: 600;
+    padding: 6px 14px;
+    border-radius: 20px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .model-btn:hover { color: var(--text); border-color: var(--accent); }
+  .model-btn.active {
+    background: var(--accent-soft);
+    color: var(--accent);
+    border-color: var(--accent);
+  }
+
+  .spacer { flex: 1; }
+
+  .info-toggle {
+    appearance: none;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-dim);
+    font: inherit;
+    font-size: 0.8rem;
+    font-weight: 600;
+    padding: 6px 12px;
+    border-radius: 20px;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+  .info-toggle:hover { color: var(--accent); border-color: var(--accent); }
+  .info-toggle.active { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+  .info-toggle[hidden] { display: none; }
+
+  /* Prompt info panel */
+  .info-panel {
+    flex-shrink: 0;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.25s ease;
+  }
+  .info-panel.open { max-height: 40vh; overflow: auto; }
+  .info-inner { padding: 14px 20px; }
+  .info-inner .info-label {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-dim);
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+  .info-inner .prompt-text {
+    font-size: 0.9rem;
+    line-height: 1.55;
+    color: var(--text);
+    white-space: pre-wrap;
+  }
+
+  .open-link {
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 6px 12px;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+  .open-link:hover { color: var(--accent); border-color: var(--accent); }
+
+  /* Frame area */
+  .frame-wrap {
+    flex: 1;
+    position: relative;
+    background: var(--bg);
+    overflow: hidden;
+  }
+  iframe {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    border: none;
+    background: #fff;
+  }
+
+  .frame-loading {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-dim);
+    font-size: 0.9rem;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.2s;
+    background: var(--bg);
+  }
+  .frame-loading.show { opacity: 1; }
+
+  @media (max-width: 560px) {
+    .subbar { gap: 8px; }
+    .open-link { display: none; }
+  }
+</style>
+</head>
+<body>
+  <header>
+    <div class="title-row">
+      <h1>🧪 Model Bench</h1>
+      <span class="subtitle">Ergebnisse verschiedener Modelle pro Aufgabe — Tab wählen, Modell umschalten.</span>
+    </div>
+    <nav class="tabs" id="tabs"></nav>
+  </header>
+
+  <div class="subbar">
+    <span class="label">Modell</span>
+    <div class="models" id="models"></div>
+    <span class="spacer"></span>
+    <button class="info-toggle" id="infoToggle" hidden>ℹ Prompt</button>
+    <a class="open-link" id="openLink" href="#" target="_blank" rel="noopener">In neuem Tab öffnen ↗</a>
+  </div>
+
+  <div class="info-panel" id="infoPanel">
+    <div class="info-inner">
+      <div class="info-label">Aufgabenstellung / Prompt</div>
+      <div class="prompt-text" id="promptText"></div>
+    </div>
+  </div>
+
+  <div class="frame-wrap">
+    <iframe id="frame" title="Modell-Ergebnis"></iframe>
+    <div class="frame-loading" id="loading">Lade …</div>
+  </div>
+
+<script>
+  // Projekt-Definitionen: Ordnernamen entsprechen exakt den Verzeichnissen im Repo.
+  const PROJECTS = [
+    { id: "bitcoin",    label: "Bitcoin",       icon: "₿",
+      models: ["ds4-flash", "floki", "glm5.2", "qwen3.6-35b-3b"],
+      prompt: "Build an interactive live Bitcoin price chart. Fetch the current BTC/USD price and historical data from a free public API that requires no API key (e.g. the Binance public API or CoinGecko free endpoint). Show a line chart with selectable time ranges (1H, 24H, 7D, 30D) that visibly animates when switching ranges. Display the current price prominently with a green/red indicator for 24h change, and auto-refresh the live price every 10 seconds. Include hover tooltips showing exact price and timestamp." },
+    { id: "gravity",    label: "Gravity",       icon: "🪐",
+      models: ["ds4-flash", "floki", "glm5.2", "qwen3.6-36b-3b"],
+      prompt: "An interactive particle gravity sandbox on a canvas: hundreds of particles with trails, clicking adds a heavy attractor. Make it mesmerizing." },
+    { id: "rubikscube", label: "Rubik's Cube",  icon: "🧊",
+      models: ["ds4-flash", "floki", "glm5.2", "qwen3.6-35b-3b"],
+      prompt: "Build a colorful, 3D-looking Rubik's Cube with 'Scramble' and 'Solve' buttons. The cube must visibly animate its rotations." },
+    { id: "tippspiel",  label: "Tippspiel",     icon: "⚽",
+      models: ["ds4-flash", "floki", "glm5.2", "qwen3.6-35b-3b"],
+      prompt: "Build a colorful, interactive World Cup 2026 prediction game (Tippspiel). Show a bracket view of the knockout stage with team flags. Users can tap each match to enter their score prediction, and the bracket must visibly animate as winners advance to the next round. Include a 'Reset' button and a 'Simulate' button that fills remaining matches with random results, plus a points counter that scores predictions (exact result = 3 points, correct winner = 1 point)." },
+  ];
+
+  // Hübschere Anzeigenamen für die Modell-Buttons.
+  function prettyModel(folder) {
+    const map = {
+      "ds4-flash": "DS4 Flash",
+      "floki": "Floki",
+      "glm5.2": "GLM 5.2",
+      "qwen3.6-35b-3b": "Qwen3.6 35B-3B",
+      "qwen3.6-36b-3b": "Qwen3.6 36B-3B",
+    };
+    return map[folder] || folder;
+  }
+
+  const tabsEl = document.getElementById("tabs");
+  const modelsEl = document.getElementById("models");
+  const frame = document.getElementById("frame");
+  const loading = document.getElementById("loading");
+  const openLink = document.getElementById("openLink");
+  const infoToggle = document.getElementById("infoToggle");
+  const infoPanel = document.getElementById("infoPanel");
+  const promptText = document.getElementById("promptText");
+
+  let current = { project: PROJECTS[0], model: PROJECTS[0].models[0] };
+
+  infoToggle.addEventListener("click", () => {
+    const open = infoPanel.classList.toggle("open");
+    infoToggle.classList.toggle("active", open);
+  });
+
+  function renderPrompt() {
+    const hasPrompt = !!(current.project.prompt && current.project.prompt.trim());
+    infoToggle.hidden = !hasPrompt;
+    if (hasPrompt) {
+      promptText.textContent = current.project.prompt;
+    } else {
+      // Beim Wechsel auf ein Projekt ohne Prompt Panel schließen.
+      infoPanel.classList.remove("open");
+      infoToggle.classList.remove("active");
+    }
+  }
+
+  // Projekt-Tabs bauen
+  PROJECTS.forEach((p) => {
+    const btn = document.createElement("button");
+    btn.className = "tab";
+    btn.dataset.id = p.id;
+    btn.innerHTML = `<span class="ico">${p.icon}</span>${p.label}`;
+    btn.addEventListener("click", () => selectProject(p));
+    tabsEl.appendChild(btn);
+  });
+
+  function selectProject(p) {
+    current.project = p;
+    // Modell beibehalten, falls im neuen Projekt vorhanden, sonst erstes nehmen.
+    current.model = p.models.includes(current.model) ? current.model : p.models[0];
+    renderTabs();
+    renderModels();
+    renderPrompt();
+    loadFrame();
+    updateHash();
+  }
+
+  function selectModel(m) {
+    current.model = m;
+    renderModels();
+    loadFrame();
+    updateHash();
+  }
+
+  function renderTabs() {
+    [...tabsEl.children].forEach((b) => {
+      b.classList.toggle("active", b.dataset.id === current.project.id);
+    });
+  }
+
+  function renderModels() {
+    modelsEl.innerHTML = "";
+    current.project.models.forEach((m) => {
+      const btn = document.createElement("button");
+      btn.className = "model-btn" + (m === current.model ? " active" : "");
+      btn.textContent = prettyModel(m);
+      btn.addEventListener("click", () => selectModel(m));
+      modelsEl.appendChild(btn);
+    });
+  }
+
+  function framePath() {
+    return `${current.project.id}/${current.model}/index.html`;
+  }
+
+  function loadFrame() {
+    const path = framePath();
+    loading.classList.add("show");
+    frame.src = path;
+    openLink.href = path;
+  }
+
+  frame.addEventListener("load", () => loading.classList.remove("show"));
+
+  // URL-Hash für teilbare Deep-Links: #bitcoin/floki
+  function updateHash() {
+    history.replaceState(null, "", `#${current.project.id}/${current.model}`);
+  }
+
+  function initFromHash() {
+    const hash = decodeURIComponent(location.hash.replace(/^#/, ""));
+    const [pid, mid] = hash.split("/");
+    const p = PROJECTS.find((x) => x.id === pid);
+    if (p) {
+      current.project = p;
+      if (mid && p.models.includes(mid)) current.model = mid;
+      else current.model = p.models[0];
+    }
+  }
+
+  initFromHash();
+  renderTabs();
+  renderModels();
+  renderPrompt();
+  loadFrame();
+</script>
+</body>
+</html>

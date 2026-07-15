@@ -1,0 +1,770 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Floki's Rubik's Cube</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;700&display=swap" rel="stylesheet">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(145deg, #0a0a0f 0%, #1a1a2e 50%, #0f0f1a 100%);
+      font-family: 'Rajdhani', sans-serif;
+      overflow: hidden;
+      position: relative;
+    }
+
+    body::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background-image: 
+        linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none;
+    }
+
+    h1 {
+      color: #e0e0e0;
+      font-size: 2.5rem;
+      font-weight: 700;
+      margin-bottom: 2rem;
+      text-transform: uppercase;
+      letter-spacing: 4px;
+      text-shadow: 0 0 30px rgba(147, 51, 234, 0.5);
+    }
+
+    .scene {
+      width: 320px;
+      height: 320px;
+      perspective: 1000px;
+      margin-bottom: 2rem;
+    }
+
+    .cube-container {
+      width: 100%;
+      height: 100%;
+      position: relative;
+      transform-style: preserve-3d;
+      transition: transform 0.1s ease-out;
+    }
+
+    .cube {
+      width: 150px;
+      height: 150px;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform-style: preserve-3d;
+      transform: translateX(-50%) translateY(-50%) rotateX(-25deg) rotateY(40deg);
+    }
+
+    .face {
+      position: absolute;
+      width: 150px;
+      height: 150px;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      grid-template-rows: repeat(3, 1fr);
+      gap: 4px;
+      padding: 4px;
+      background: #111;
+      border-radius: 8px;
+      transform-style: preserve-3d;
+    }
+
+    .face.front  { transform: rotateY(0deg) translateZ(75px); }
+    .face.back   { transform: rotateY(180deg) translateZ(75px); }
+    .face.right  { transform: rotateY(90deg) translateZ(75px); }
+    .face.left   { transform: rotateY(-90deg) translateZ(75px); }
+    .face.top    { transform: rotateX(90deg) translateZ(75px); }
+    .face.bottom { transform: rotateX(-90deg) translateZ(75px); }
+
+    .cubie {
+      border-radius: 6px;
+      background: #222;
+      position: relative;
+      transform-style: preserve-3d;
+    }
+
+    .cubie::before {
+      content: '';
+      position: absolute;
+      inset: 3px;
+      border-radius: 4px;
+      box-shadow: inset 0 0 8px rgba(0,0,0,0.4);
+    }
+
+    .cubie.white::before { background: linear-gradient(135deg, #FFFFFF 0%, #E8E8E8 100%); }
+    .cubie.yellow::before { background: linear-gradient(135deg, #FFD500 0%, #FFC000 100%); }
+    .cubie.red::before { background: linear-gradient(135deg, #B71234 0%, #9A0E2A 100%); }
+    .cubie.orange::before { background: linear-gradient(135deg, #FF5800 0%, #E04D00 100%); }
+    .cubie.blue::before { background: linear-gradient(135deg, #0046AD 0%, #003080 100%); }
+    .cubie.green::before { background: linear-gradient(135deg, #009B48 0%, #007A38 100%); }
+
+    .cubie.highlight::before {
+      box-shadow: inset 0 0 8px rgba(0,0,0,0.4), 0 0 15px currentColor;
+    }
+
+    .rotating-layer {
+      position: absolute;
+      width: 150px;
+      height: 150px;
+      top: 50%;
+      left: 50%;
+      transform-style: preserve-3d;
+      transform-origin: center center;
+    }
+
+    .controls {
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+      justify-content: center;
+      max-width: 400px;
+    }
+
+    .btn {
+      padding: 0.8rem 1.8rem;
+      font-family: 'Rajdhani', sans-serif;
+      font-size: 1.1rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      color: white;
+      position: relative;
+      overflow: hidden;
+      transition: all 0.3s ease;
+    }
+
+    .btn::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(180deg, rgba(255,255,255,0.2) 0%, transparent 50%);
+      pointer-events: none;
+    }
+
+    .btn:hover:not(:disabled) {
+      transform: scale(1.05) translateY(-2px);
+    }
+
+    .btn:active:not(:disabled) {
+      transform: scale(0.98);
+    }
+
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .btn-scramble {
+      background: linear-gradient(135deg, #9333EA 0%, #7C3AED 100%);
+      box-shadow: 0 4px 15px rgba(147, 51, 234, 0.4);
+    }
+
+    .btn-scramble:hover:not(:disabled) {
+      box-shadow: 0 6px 25px rgba(147, 51, 234, 0.6);
+    }
+
+    .btn-solve {
+      background: linear-gradient(135deg, #3B82F6 0%, #2563EB 100%);
+      box-shadow: 0 4px 15px rgba(59, 130, 246, 0.4);
+    }
+
+    .btn-solve:hover:not(:disabled) {
+      box-shadow: 0 6px 25px rgba(59, 130, 246, 0.6);
+    }
+
+    .btn-reset {
+      background: linear-gradient(135deg, #6B7280 0%, #4B5563 100%);
+      box-shadow: 0 4px 15px rgba(107, 114, 128, 0.4);
+    }
+
+    .btn-reset:hover:not(:disabled) {
+      box-shadow: 0 6px 25px rgba(107, 114, 128, 0.6);
+    }
+
+    .shadow {
+      position: absolute;
+      width: 200px;
+      height: 30px;
+      background: radial-gradient(ellipse, rgba(0,0,0,0.5) 0%, transparent 70%);
+      bottom: -60px;
+      left: 50%;
+      transform: translateX(-50%);
+      filter: blur(10px);
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 0.6; }
+      50% { opacity: 1; }
+    }
+
+    .status {
+      color: rgba(255,255,255,0.6);
+      font-size: 0.9rem;
+      margin-top: 1.5rem;
+      height: 1.5rem;
+      letter-spacing: 1px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Rubik's Cube</h1>
+  
+  <div class="scene" id="scene">
+    <div class="shadow"></div>
+    <div class="cube-container" id="cubeContainer">
+      <div class="cube" id="cube"></div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <button class="btn btn-scramble" id="scrambleBtn">Scramble</button>
+    <button class="btn btn-solve" id="solveBtn">Solve</button>
+    <button class="btn btn-reset" id="resetBtn">Reset</button>
+  </div>
+
+  <div class="status" id="status"></div>
+
+  <script>
+    // Cube state: 6 faces, each with 9 positions
+    // Faces: U(0), D(1), F(2), B(3), R(4), L(5)
+    // Colors: W(white), Y(yellow), R(red), O(orange), B(blue), G(green)
+    
+    const COLORS = ['white', 'yellow', 'red', 'orange', 'blue', 'green'];
+    const FACES = { U: 0, D: 1, F: 2, B: 3, R: 4, L: 5 };
+    const FACE_ELEMENTS = ['top', 'bottom', 'front', 'back', 'right', 'left'];
+    
+    let cubeState = [];
+    let moveHistory = [];
+    let isAnimating = false;
+    let rotationX = -25;
+    let rotationY = 40;
+    let isDragging = false;
+    let lastX = 0;
+    let lastY = 0;
+
+    function initCubeState() {
+      cubeState = [];
+      for (let f = 0; f < 6; f++) {
+        cubeState.push(Array(9).fill(COLORS[f]));
+      }
+    }
+
+    function getCubieColor(face, index) {
+      return cubeState[face][index];
+    }
+
+    function renderCube() {
+      const cube = document.getElementById('cube');
+      cube.innerHTML = '';
+
+      FACE_ELEMENTS.forEach((faceName, faceIndex) => {
+        const face = document.createElement('div');
+        face.className = `face ${faceName}`;
+        face.dataset.face = faceIndex;
+
+        for (let i = 0; i < 9; i++) {
+          const cubie = document.createElement('div');
+          cubie.className = `cubie ${getCubieColor(faceIndex, i)}`;
+          cubie.dataset.index = i;
+          face.appendChild(cubie);
+        }
+
+        cube.appendChild(face);
+      });
+    }
+
+    function rotateFaceCW(face) {
+      const temp = [...face];
+      face[0] = temp[6]; face[1] = temp[3]; face[2] = temp[0];
+      face[3] = temp[7]; face[4] = temp[4]; face[5] = temp[1];
+      face[6] = temp[8]; face[7] = temp[5]; face[8] = temp[2];
+    }
+
+    function rotateFaceCCW(face) {
+      const temp = [...face];
+      face[0] = temp[2]; face[1] = temp[5]; face[2] = temp[8];
+      face[3] = temp[1]; face[4] = temp[4]; face[5] = temp[7];
+      face[6] = temp[0]; face[7] = temp[3]; face[8] = temp[6];
+    }
+
+    function applyMove(move, inverse = false) {
+      const { face, clockwise } = move;
+      const cw = inverse ? !clockwise : clockwise;
+
+      // Rotate the face itself
+      if (cw) {
+        rotateFaceCW(cubeState[face]);
+      } else {
+        rotateFaceCCW(cubeState[face]);
+      }
+
+      // Rotate adjacent edges
+      const temp = [];
+
+      switch(face) {
+        case FACES.U: // Up
+          if (cw) {
+            temp[0] = cubeState[FACES.F][0]; temp[1] = cubeState[FACES.F][1]; temp[2] = cubeState[FACES.F][2];
+            cubeState[FACES.F][0] = cubeState[FACES.R][0];
+            cubeState[FACES.F][1] = cubeState[FACES.R][1];
+            cubeState[FACES.F][2] = cubeState[FACES.R][2];
+            cubeState[FACES.R][0] = cubeState[FACES.B][0];
+            cubeState[FACES.R][1] = cubeState[FACES.B][1];
+            cubeState[FACES.R][2] = cubeState[FACES.B][2];
+            cubeState[FACES.B][0] = cubeState[FACES.L][0];
+            cubeState[FACES.B][1] = cubeState[FACES.L][1];
+            cubeState[FACES.B][2] = cubeState[FACES.L][2];
+            cubeState[FACES.L][0] = temp[0];
+            cubeState[FACES.L][1] = temp[1];
+            cubeState[FACES.L][2] = temp[2];
+          } else {
+            temp[0] = cubeState[FACES.F][0]; temp[1] = cubeState[FACES.F][1]; temp[2] = cubeState[FACES.F][2];
+            cubeState[FACES.F][0] = cubeState[FACES.L][0];
+            cubeState[FACES.F][1] = cubeState[FACES.L][1];
+            cubeState[FACES.F][2] = cubeState[FACES.L][2];
+            cubeState[FACES.L][0] = cubeState[FACES.B][0];
+            cubeState[FACES.L][1] = cubeState[FACES.B][1];
+            cubeState[FACES.L][2] = cubeState[FACES.B][2];
+            cubeState[FACES.B][0] = cubeState[FACES.R][0];
+            cubeState[FACES.B][1] = cubeState[FACES.R][1];
+            cubeState[FACES.B][2] = cubeState[FACES.R][2];
+            cubeState[FACES.R][0] = temp[0];
+            cubeState[FACES.R][1] = temp[1];
+            cubeState[FACES.R][2] = temp[2];
+          }
+          break;
+        case FACES.D: // Down
+          if (cw) {
+            temp[0] = cubeState[FACES.F][6]; temp[1] = cubeState[FACES.F][7]; temp[2] = cubeState[FACES.F][8];
+            cubeState[FACES.F][6] = cubeState[FACES.L][6];
+            cubeState[FACES.F][7] = cubeState[FACES.L][7];
+            cubeState[FACES.F][8] = cubeState[FACES.L][8];
+            cubeState[FACES.L][6] = cubeState[FACES.B][6];
+            cubeState[FACES.L][7] = cubeState[FACES.B][7];
+            cubeState[FACES.L][8] = cubeState[FACES.B][8];
+            cubeState[FACES.B][6] = cubeState[FACES.R][6];
+            cubeState[FACES.B][7] = cubeState[FACES.R][7];
+            cubeState[FACES.B][8] = cubeState[FACES.R][8];
+            cubeState[FACES.R][6] = temp[0];
+            cubeState[FACES.R][7] = temp[1];
+            cubeState[FACES.R][8] = temp[2];
+          } else {
+            temp[0] = cubeState[FACES.F][6]; temp[1] = cubeState[FACES.F][7]; temp[2] = cubeState[FACES.F][8];
+            cubeState[FACES.F][6] = cubeState[FACES.R][6];
+            cubeState[FACES.F][7] = cubeState[FACES.R][7];
+            cubeState[FACES.F][8] = cubeState[FACES.R][8];
+            cubeState[FACES.R][6] = cubeState[FACES.B][6];
+            cubeState[FACES.R][7] = cubeState[FACES.B][7];
+            cubeState[FACES.R][8] = cubeState[FACES.B][8];
+            cubeState[FACES.B][6] = cubeState[FACES.L][6];
+            cubeState[FACES.B][7] = cubeState[FACES.L][7];
+            cubeState[FACES.B][8] = cubeState[FACES.L][8];
+            cubeState[FACES.L][6] = temp[0];
+            cubeState[FACES.L][7] = temp[1];
+            cubeState[FACES.L][8] = temp[2];
+          }
+          break;
+        case FACES.F: // Front
+          if (cw) {
+            temp[0] = cubeState[FACES.U][6]; temp[1] = cubeState[FACES.U][7]; temp[2] = cubeState[FACES.U][8];
+            cubeState[FACES.U][6] = cubeState[FACES.L][8];
+            cubeState[FACES.U][7] = cubeState[FACES.L][5];
+            cubeState[FACES.U][8] = cubeState[FACES.L][2];
+            cubeState[FACES.L][2] = cubeState[FACES.D][0];
+            cubeState[FACES.L][5] = cubeState[FACES.D][1];
+            cubeState[FACES.L][8] = cubeState[FACES.D][2];
+            cubeState[FACES.D][0] = cubeState[FACES.R][6];
+            cubeState[FACES.D][1] = cubeState[FACES.R][3];
+            cubeState[FACES.D][2] = cubeState[FACES.R][0];
+            cubeState[FACES.R][0] = temp[0];
+            cubeState[FACES.R][3] = temp[1];
+            cubeState[FACES.R][6] = temp[2];
+          } else {
+            temp[0] = cubeState[FACES.U][6]; temp[1] = cubeState[FACES.U][7]; temp[2] = cubeState[FACES.U][8];
+            cubeState[FACES.U][6] = cubeState[FACES.R][0];
+            cubeState[FACES.U][7] = cubeState[FACES.R][3];
+            cubeState[FACES.U][8] = cubeState[FACES.R][6];
+            cubeState[FACES.R][0] = cubeState[FACES.D][2];
+            cubeState[FACES.R][3] = cubeState[FACES.D][1];
+            cubeState[FACES.R][6] = cubeState[FACES.D][0];
+            cubeState[FACES.D][0] = cubeState[FACES.L][2];
+            cubeState[FACES.D][1] = cubeState[FACES.L][5];
+            cubeState[FACES.D][2] = cubeState[FACES.L][8];
+            cubeState[FACES.L][2] = temp[2];
+            cubeState[FACES.L][5] = temp[1];
+            cubeState[FACES.L][8] = temp[0];
+          }
+          break;
+        case FACES.B: // Back
+          if (cw) {
+            temp[0] = cubeState[FACES.U][0]; temp[1] = cubeState[FACES.U][1]; temp[2] = cubeState[FACES.U][2];
+            cubeState[FACES.U][0] = cubeState[FACES.R][2];
+            cubeState[FACES.U][1] = cubeState[FACES.R][5];
+            cubeState[FACES.U][2] = cubeState[FACES.R][8];
+            cubeState[FACES.R][2] = cubeState[FACES.D][8];
+            cubeState[FACES.R][5] = cubeState[FACES.D][7];
+            cubeState[FACES.R][8] = cubeState[FACES.D][6];
+            cubeState[FACES.D][6] = cubeState[FACES.L][0];
+            cubeState[FACES.D][7] = cubeState[FACES.L][3];
+            cubeState[FACES.D][8] = cubeState[FACES.L][6];
+            cubeState[FACES.L][0] = temp[2];
+            cubeState[FACES.L][3] = temp[1];
+            cubeState[FACES.L][6] = temp[0];
+          } else {
+            temp[0] = cubeState[FACES.U][0]; temp[1] = cubeState[FACES.U][1]; temp[2] = cubeState[FACES.U][2];
+            cubeState[FACES.U][0] = cubeState[FACES.L][6];
+            cubeState[FACES.U][1] = cubeState[FACES.L][3];
+            cubeState[FACES.U][2] = cubeState[FACES.L][0];
+            cubeState[FACES.L][0] = cubeState[FACES.D][6];
+            cubeState[FACES.L][3] = cubeState[FACES.D][7];
+            cubeState[FACES.L][6] = cubeState[FACES.D][8];
+            cubeState[FACES.D][6] = cubeState[FACES.R][8];
+            cubeState[FACES.D][7] = cubeState[FACES.R][5];
+            cubeState[FACES.D][8] = cubeState[FACES.R][2];
+            cubeState[FACES.R][2] = temp[0];
+            cubeState[FACES.R][5] = temp[1];
+            cubeState[FACES.R][8] = temp[2];
+          }
+          break;
+        case FACES.R: // Right
+          if (cw) {
+            temp[0] = cubeState[FACES.U][2]; temp[1] = cubeState[FACES.U][5]; temp[2] = cubeState[FACES.U][8];
+            cubeState[FACES.U][2] = cubeState[FACES.F][2];
+            cubeState[FACES.U][5] = cubeState[FACES.F][5];
+            cubeState[FACES.U][8] = cubeState[FACES.F][8];
+            cubeState[FACES.F][2] = cubeState[FACES.D][2];
+            cubeState[FACES.F][5] = cubeState[FACES.D][5];
+            cubeState[FACES.F][8] = cubeState[FACES.D][8];
+            cubeState[FACES.D][2] = cubeState[FACES.B][6];
+            cubeState[FACES.D][5] = cubeState[FACES.B][3];
+            cubeState[FACES.D][8] = cubeState[FACES.B][0];
+            cubeState[FACES.B][0] = temp[2];
+            cubeState[FACES.B][3] = temp[1];
+            cubeState[FACES.B][6] = temp[0];
+          } else {
+            temp[0] = cubeState[FACES.U][2]; temp[1] = cubeState[FACES.U][5]; temp[2] = cubeState[FACES.U][8];
+            cubeState[FACES.U][2] = cubeState[FACES.B][6];
+            cubeState[FACES.U][5] = cubeState[FACES.B][3];
+            cubeState[FACES.U][8] = cubeState[FACES.B][0];
+            cubeState[FACES.B][0] = cubeState[FACES.D][8];
+            cubeState[FACES.B][3] = cubeState[FACES.D][5];
+            cubeState[FACES.B][6] = cubeState[FACES.D][2];
+            cubeState[FACES.D][2] = cubeState[FACES.F][2];
+            cubeState[FACES.D][5] = cubeState[FACES.F][5];
+            cubeState[FACES.D][8] = cubeState[FACES.F][8];
+            cubeState[FACES.F][2] = temp[0];
+            cubeState[FACES.F][5] = temp[1];
+            cubeState[FACES.F][8] = temp[2];
+          }
+          break;
+        case FACES.L: // Left
+          if (cw) {
+            temp[0] = cubeState[FACES.U][0]; temp[1] = cubeState[FACES.U][3]; temp[2] = cubeState[FACES.U][6];
+            cubeState[FACES.U][0] = cubeState[FACES.B][8];
+            cubeState[FACES.U][3] = cubeState[FACES.B][5];
+            cubeState[FACES.U][6] = cubeState[FACES.B][2];
+            cubeState[FACES.B][2] = cubeState[FACES.D][6];
+            cubeState[FACES.B][5] = cubeState[FACES.D][3];
+            cubeState[FACES.B][8] = cubeState[FACES.D][0];
+            cubeState[FACES.D][0] = cubeState[FACES.F][0];
+            cubeState[FACES.D][3] = cubeState[FACES.F][3];
+            cubeState[FACES.D][6] = cubeState[FACES.F][6];
+            cubeState[FACES.F][0] = temp[0];
+            cubeState[FACES.F][3] = temp[1];
+            cubeState[FACES.F][6] = temp[2];
+          } else {
+            temp[0] = cubeState[FACES.U][0]; temp[1] = cubeState[FACES.U][3]; temp[2] = cubeState[FACES.U][6];
+            cubeState[FACES.U][0] = cubeState[FACES.F][0];
+            cubeState[FACES.U][3] = cubeState[FACES.F][3];
+            cubeState[FACES.U][6] = cubeState[FACES.F][6];
+            cubeState[FACES.F][0] = cubeState[FACES.D][0];
+            cubeState[FACES.F][3] = cubeState[FACES.D][3];
+            cubeState[FACES.F][6] = cubeState[FACES.D][6];
+            cubeState[FACES.D][0] = cubeState[FACES.B][8];
+            cubeState[FACES.D][3] = cubeState[FACES.B][5];
+            cubeState[FACES.D][6] = cubeState[FACES.B][2];
+            cubeState[FACES.B][2] = temp[2];
+            cubeState[FACES.B][5] = temp[1];
+            cubeState[FACES.B][8] = temp[0];
+          }
+          break;
+      }
+    }
+
+    function getFaceTransform(face, clockwise) {
+      const transforms = {
+        [FACES.U]: { axis: 'Y', angle: clockwise ? -90 : 90 },
+        [FACES.D]: { axis: 'Y', angle: clockwise ? 90 : -90 },
+        [FACES.F]: { axis: 'Z', angle: clockwise ? 90 : -90 },
+        [FACES.B]: { axis: 'Z', angle: clockwise ? -90 : 90 },
+        [FACES.R]: { axis: 'X', angle: clockwise ? -90 : 90 },
+        [FACES.L]: { axis: 'X', angle: clockwise ? 90 : -90 }
+      };
+      return transforms[face];
+    }
+
+    function getLayerCubies(face) {
+      const cubies = [];
+      const faceElements = document.querySelectorAll('.face');
+      
+      switch(face) {
+        case FACES.U:
+          cubies.push(...faceElements[FACES.U].querySelectorAll('.cubie'));
+          cubies.push(...faceElements[FACES.F].querySelectorAll('.cubie:nth-child(-n+3)'));
+          cubies.push(...faceElements[FACES.R].querySelectorAll('.cubie:nth-child(-n+3)'));
+          cubies.push(...faceElements[FACES.B].querySelectorAll('.cubie:nth-child(-n+3)'));
+          cubies.push(...faceElements[FACES.L].querySelectorAll('.cubie:nth-child(-n+3)'));
+          break;
+        case FACES.D:
+          cubies.push(...faceElements[FACES.D].querySelectorAll('.cubie'));
+          cubies.push(...faceElements[FACES.F].querySelectorAll('.cubie:nth-child(n+7)'));
+          cubies.push(...faceElements[FACES.R].querySelectorAll('.cubie:nth-child(n+7)'));
+          cubies.push(...faceElements[FACES.B].querySelectorAll('.cubie:nth-child(n+7)'));
+          cubies.push(...faceElements[FACES.L].querySelectorAll('.cubie:nth-child(n+7)'));
+          break;
+        case FACES.F:
+          cubies.push(...faceElements[FACES.F].querySelectorAll('.cubie'));
+          cubies.push(faceElements[FACES.U].querySelectorAll('.cubie')[6], faceElements[FACES.U].querySelectorAll('.cubie')[7], faceElements[FACES.U].querySelectorAll('.cubie')[8]);
+          cubies.push(faceElements[FACES.R].querySelectorAll('.cubie')[0], faceElements[FACES.R].querySelectorAll('.cubie')[3], faceElements[FACES.R].querySelectorAll('.cubie')[6]);
+          cubies.push(faceElements[FACES.D].querySelectorAll('.cubie')[0], faceElements[FACES.D].querySelectorAll('.cubie')[1], faceElements[FACES.D].querySelectorAll('.cubie')[2]);
+          cubies.push(faceElements[FACES.L].querySelectorAll('.cubie')[2], faceElements[FACES.L].querySelectorAll('.cubie')[5], faceElements[FACES.L].querySelectorAll('.cubie')[8]);
+          break;
+        case FACES.B:
+          cubies.push(...faceElements[FACES.B].querySelectorAll('.cubie'));
+          cubies.push(faceElements[FACES.U].querySelectorAll('.cubie')[0], faceElements[FACES.U].querySelectorAll('.cubie')[1], faceElements[FACES.U].querySelectorAll('.cubie')[2]);
+          cubies.push(faceElements[FACES.L].querySelectorAll('.cubie')[0], faceElements[FACES.L].querySelectorAll('.cubie')[3], faceElements[FACES.L].querySelectorAll('.cubie')[6]);
+          cubies.push(faceElements[FACES.D].querySelectorAll('.cubie')[6], faceElements[FACES.D].querySelectorAll('.cubie')[7], faceElements[FACES.D].querySelectorAll('.cubie')[8]);
+          cubies.push(faceElements[FACES.R].querySelectorAll('.cubie')[2], faceElements[FACES.R].querySelectorAll('.cubie')[5], faceElements[FACES.R].querySelectorAll('.cubie')[8]);
+          break;
+        case FACES.R:
+          cubies.push(...faceElements[FACES.R].querySelectorAll('.cubie'));
+          cubies.push(faceElements[FACES.U].querySelectorAll('.cubie')[2], faceElements[FACES.U].querySelectorAll('.cubie')[5], faceElements[FACES.U].querySelectorAll('.cubie')[8]);
+          cubies.push(faceElements[FACES.F].querySelectorAll('.cubie')[2], faceElements[FACES.F].querySelectorAll('.cubie')[5], faceElements[FACES.F].querySelectorAll('.cubie')[8]);
+          cubies.push(faceElements[FACES.D].querySelectorAll('.cubie')[2], faceElements[FACES.D].querySelectorAll('.cubie')[5], faceElements[FACES.D].querySelectorAll('.cubie')[8]);
+          cubies.push(faceElements[FACES.B].querySelectorAll('.cubie')[0], faceElements[FACES.B].querySelectorAll('.cubie')[3], faceElements[FACES.B].querySelectorAll('.cubie')[6]);
+          break;
+        case FACES.L:
+          cubies.push(...faceElements[FACES.L].querySelectorAll('.cubie'));
+          cubies.push(faceElements[FACES.U].querySelectorAll('.cubie')[0], faceElements[FACES.U].querySelectorAll('.cubie')[3], faceElements[FACES.U].querySelectorAll('.cubie')[6]);
+          cubies.push(faceElements[FACES.B].querySelectorAll('.cubie')[2], faceElements[FACES.B].querySelectorAll('.cubie')[5], faceElements[FACES.B].querySelectorAll('.cubie')[8]);
+          cubies.push(faceElements[FACES.D].querySelectorAll('.cubie')[0], faceElements[FACES.D].querySelectorAll('.cubie')[3], faceElements[FACES.D].querySelectorAll('.cubie')[6]);
+          cubies.push(faceElements[FACES.F].querySelectorAll('.cubie')[0], faceElements[FACES.F].querySelectorAll('.cubie')[3], faceElements[FACES.F].querySelectorAll('.cubie')[6]);
+          break;
+      }
+      return cubies;
+    }
+
+    async function animateMove(move, duration = 300) {
+      return new Promise(resolve => {
+        const { face, clockwise } = move;
+        const { axis, angle } = getFaceTransform(face, clockwise);
+        
+        const layer = document.createElement('div');
+        layer.className = 'rotating-layer';
+        
+        const cube = document.getElementById('cube');
+        const cubies = getLayerCubies(face);
+        
+        // Clone cubies to the rotating layer
+        cubies.forEach(cubie => {
+          const clone = cubie.cloneNode(true);
+          layer.appendChild(clone);
+          cubie.style.visibility = 'hidden';
+        });
+        
+        cube.appendChild(layer);
+        
+        // Animate the rotation
+        const startTime = performance.now();
+        
+        function animate(currentTime) {
+          const elapsed = currentTime - startTime;
+          const progress = Math.min(elapsed / duration, 1);
+          const eased = 1 - Math.pow(1 - progress, 3); // ease-out cubic
+          
+          const rotationAngle = angle * eased;
+          layer.style.transform = `translateX(-50%) translateY(-50%) rotate${axis}(${rotationAngle}deg)`;
+          
+          if (progress < 1) {
+            requestAnimationFrame(animate);
+          } else {
+            // Apply the move to state
+            applyMove(move);
+            renderCube();
+            layer.remove();
+            resolve();
+          }
+        }
+        
+        requestAnimationFrame(animate);
+      });
+    }
+
+    function generateScrambleMoves(count = 20) {
+      const moves = [];
+      let lastFace = -1;
+      
+      for (let i = 0; i < count; i++) {
+        let face;
+        do {
+          face = Math.floor(Math.random() * 6);
+        } while (face === lastFace);
+        
+        moves.push({
+          face: face,
+          clockwise: Math.random() > 0.5
+        });
+        lastFace = face;
+      }
+      
+      return moves;
+    }
+
+    async function scramble() {
+      if (isAnimating) return;
+      isAnimating = true;
+      setButtonsDisabled(true);
+      
+      const moves = generateScrambleMoves(20);
+      moveHistory = [...moves];
+      
+      for (const move of moves) {
+        await animateMove(move, 150);
+      }
+      
+      isAnimating = false;
+      setButtonsDisabled(false);
+      updateStatus('Scrambled!');
+    }
+
+    async function solve() {
+      if (isAnimating || moveHistory.length === 0) return;
+      isAnimating = true;
+      setButtonsDisabled(true);
+      
+      const reversedMoves = [...moveHistory].reverse().map(move => ({
+        face: move.face,
+        clockwise: !move.clockwise
+      }));
+      
+      for (const move of reversedMoves) {
+        await animateMove(move, 150);
+      }
+      
+      moveHistory = [];
+      isAnimating = false;
+      setButtonsDisabled(false);
+      updateStatus('Solved!');
+    }
+
+    function reset() {
+      if (isAnimating) return;
+      initCubeState();
+      moveHistory = [];
+      renderCube();
+      updateStatus('Reset');
+    }
+
+    function setButtonsDisabled(disabled) {
+      document.getElementById('scrambleBtn').disabled = disabled;
+      document.getElementById('solveBtn').disabled = disabled;
+      document.getElementById('resetBtn').disabled = disabled;
+    }
+
+    function updateStatus(text) {
+      document.getElementById('status').textContent = text;
+    }
+
+    // Orbit controls
+    const scene = document.getElementById('scene');
+    const cubeContainer = document.getElementById('cubeContainer');
+
+    scene.addEventListener('mousedown', (e) => {
+      if (e.target.closest('.btn')) return;
+      isDragging = true;
+      lastX = e.clientX;
+      lastY = e.clientY;
+      scene.style.cursor = 'grabbing';
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
+      
+      const deltaX = e.clientX - lastX;
+      const deltaY = e.clientY - lastY;
+      
+      rotationY += deltaX * 0.5;
+      rotationX -= deltaY * 0.5;
+      rotationX = Math.max(-90, Math.min(90, rotationX));
+      
+      cubeContainer.style.transform = `rotateX(${rotationX}deg) rotateY(${rotationY}deg)`;
+      
+      lastX = e.clientX;
+      lastY = e.clientY;
+    });
+
+    window.addEventListener('mouseup', () => {
+      isDragging = false;
+      scene.style.cursor = 'grab';
+    });
+
+    // Touch support
+    scene.addEventListener('touchstart', (e) => {
+      if (e.target.closest('.btn')) return;
+      isDragging = true;
+      lastX = e.touches[0].clientX;
+      lastY = e.touches[0].clientY;
+    });
+
+    window.addEventListener('touchmove', (e) => {
+      if (!isDragging) return;
+      
+      const deltaX = e.touches[0].clientX - lastX;
+      const deltaY = e.touches[0].clientY - lastY;
+      
+      rotationY += deltaX * 0.5;
+      rotationX -= deltaY * 0.5;
+      rotationX = Math.max(-90, Math.min(90, rotationX));
+      
+      cubeContainer.style.transform = `rotateX(${rotationX}deg) rotateY(${rotationY}deg)`;
+      
+      lastX = e.touches[0].clientX;
+      lastY = e.touches[0].clientY;
+    });
+
+    window.addEventListener('touchend', () => {
+      isDragging = false;
+    });
+
+    // Button events
+    document.getElementById('scrambleBtn').addEventListener('click', scramble);
+    document.getElementById('solveBtn').addEventListener('click', solve);
+    document.getElementById('resetBtn').addEventListener('click', reset);
+
+    // Initialize
+    initCubeState();
+    renderCube();
+    scene.style.cursor = 'grab';
+  </script>
+</body>
+</html>

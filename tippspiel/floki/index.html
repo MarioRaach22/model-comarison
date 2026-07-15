@@ -1,0 +1,1276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>World Cup 2026 Tippspiel</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700&family=Oswald:wght@500;700&display=swap" rel="stylesheet">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏆</text></svg>">
+  <style>
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    :root {
+      --primary: #1a472a;
+      --secondary: #0d1f17;
+      --accent-gold: #ffd700;
+      --accent-cyan: #00d4ff;
+      --winner-glow: #4ade80;
+      --bg: #0a1612;
+      --surface: #152820;
+      --surface-light: #1e3a2f;
+      --text-primary: #ffffff;
+      --text-secondary: #94a3b8;
+      --error: #ef4444;
+      --border: rgba(255, 255, 255, 0.1);
+    }
+
+    body {
+      font-family: 'Barlow Condensed', sans-serif;
+      background: var(--bg);
+      color: var(--text-primary);
+      min-height: 100vh;
+      overflow-x: auto;
+    }
+
+    /* Header */
+    .header {
+      background: linear-gradient(180deg, var(--primary) 0%, var(--secondary) 100%);
+      padding: 24px 32px;
+      position: relative;
+      overflow: hidden;
+      border-bottom: 3px solid var(--accent-gold);
+    }
+
+    .header::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 200%;
+      height: 100px;
+      background: radial-gradient(ellipse at center, rgba(255, 215, 0, 0.3) 0%, transparent 70%);
+      animation: pulse-glow 3s ease-in-out infinite;
+    }
+
+    @keyframes pulse-glow {
+      0%, 100% { opacity: 0.5; }
+      50% { opacity: 1; }
+    }
+
+    .header-content {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      max-width: 1600px;
+      margin: 0 auto;
+      position: relative;
+      z-index: 1;
+    }
+
+    .title {
+      font-family: 'Oswald', sans-serif;
+      font-size: clamp(24px, 5vw, 42px);
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      background: linear-gradient(135deg, var(--accent-gold), var(--accent-cyan));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      text-shadow: 0 0 40px rgba(255, 215, 0, 0.5);
+    }
+
+    .points-display {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: var(--surface);
+      padding: 12px 24px;
+      border-radius: 12px;
+      border: 2px solid var(--accent-gold);
+      box-shadow: 0 0 20px rgba(255, 215, 0, 0.3);
+    }
+
+    .points-display svg {
+      width: 32px;
+      height: 32px;
+      fill: var(--accent-gold);
+    }
+
+    .points-value {
+      font-family: 'Oswald', sans-serif;
+      font-size: 36px;
+      font-weight: 700;
+      color: var(--accent-gold);
+      min-width: 60px;
+      text-align: right;
+      transition: transform 0.3s ease;
+    }
+
+    .points-value.bump {
+      animation: point-bump 0.4s ease;
+    }
+
+    @keyframes point-bump {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.3); color: var(--winner-glow); }
+    }
+
+    .points-label {
+      font-size: 14px;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    /* Action Bar */
+    .action-bar {
+      display: flex;
+      justify-content: center;
+      gap: 16px;
+      padding: 20px;
+      background: var(--secondary);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .btn {
+      font-family: 'Oswald', sans-serif;
+      font-size: 16px;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      padding: 12px 28px;
+      border-radius: 8px;
+      border: 2px solid transparent;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn svg {
+      width: 20px;
+      height: 20px;
+    }
+
+    .btn-reset {
+      background: transparent;
+      border-color: var(--error);
+      color: var(--error);
+    }
+
+    .btn-reset:hover {
+      background: var(--error);
+      color: white;
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
+    }
+
+    .btn-simulate {
+      background: linear-gradient(135deg, var(--winner-glow), #22c55e);
+      border-color: var(--winner-glow);
+      color: var(--bg);
+    }
+
+    .btn-simulate:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(74, 222, 128, 0.4);
+    }
+
+    .btn:active {
+      transform: scale(0.98);
+    }
+
+    /* Bracket Container */
+    .bracket-container {
+      padding: 40px 20px;
+      min-height: calc(100vh - 200px);
+      overflow-x: auto;
+    }
+
+    .bracket {
+      display: flex;
+      gap: 40px;
+      min-width: max-content;
+      padding: 20px;
+    }
+
+    .round {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .round-label {
+      font-family: 'Oswald', sans-serif;
+      font-size: 18px;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      color: var(--text-secondary);
+      text-align: center;
+      margin-bottom: 12px;
+    }
+
+    .round-r16 .matches { gap: 20px; }
+    .round-qf .matches { gap: 80px; }
+    .round-sf .matches { gap: 200px; }
+    .round-final { justify-content: center; }
+
+    .matches {
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Match Card */
+    .match-card {
+      background: var(--surface);
+      border: 2px solid var(--border);
+      border-radius: 12px;
+      padding: 12px 16px;
+      width: 200px;
+      cursor: pointer;
+      transition: all 0.25s ease;
+      position: relative;
+    }
+
+    .match-card:hover {
+      transform: translateY(-3px);
+      border-color: var(--accent-cyan);
+      box-shadow: 0 8px 24px rgba(0, 212, 255, 0.2);
+    }
+
+    .match-card.decided {
+      border-color: var(--accent-gold);
+      box-shadow: 0 0 20px rgba(255, 215, 0, 0.2);
+    }
+
+    .match-card.locked {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .match-card.locked:hover {
+      transform: none;
+      border-color: var(--border);
+      box-shadow: none;
+    }
+
+    .team-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 0;
+      border-radius: 6px;
+      transition: all 0.3s ease;
+    }
+
+    .team-row.winner {
+      background: linear-gradient(90deg, rgba(255, 215, 0, 0.2), transparent);
+    }
+
+    .team-row.winner .team-name {
+      color: var(--accent-gold);
+      font-weight: 700;
+    }
+
+    .team-row.loser {
+      opacity: 0.4;
+    }
+
+    .team-flag {
+      width: 32px;
+      height: 24px;
+      border-radius: 3px;
+      object-fit: cover;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    .team-name {
+      font-size: 16px;
+      font-weight: 600;
+      flex: 1;
+      color: var(--text-primary);
+    }
+
+    .team-name.unknown {
+      color: var(--text-secondary);
+      font-style: italic;
+    }
+
+    .team-score {
+      font-family: 'Oswald', sans-serif;
+      font-size: 24px;
+      font-weight: 700;
+      min-width: 32px;
+      text-align: center;
+      color: var(--accent-cyan);
+    }
+
+    .team-score.empty {
+      color: var(--text-secondary);
+    }
+
+    .vs-divider {
+      text-align: center;
+      font-size: 12px;
+      color: var(--text-secondary);
+      padding: 4px 0;
+      border-top: 1px dashed var(--border);
+      margin-top: 4px;
+    }
+
+    .tap-hint {
+      text-align: center;
+      font-size: 11px;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-top: 8px;
+      opacity: 0.7;
+    }
+
+    /* Champion Display */
+    .champion-slot {
+      width: 240px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .champion-card {
+      background: linear-gradient(135deg, var(--surface-light), var(--surface));
+      border: 3px solid var(--accent-gold);
+      border-radius: 16px;
+      padding: 24px;
+      text-align: center;
+      box-shadow: 0 0 40px rgba(255, 215, 0, 0.3);
+      animation: champion-glow 2s ease-in-out infinite;
+    }
+
+    @keyframes champion-glow {
+      0%, 100% { box-shadow: 0 0 40px rgba(255, 215, 0, 0.3); }
+      50% { box-shadow: 0 0 60px rgba(255, 215, 0, 0.5); }
+    }
+
+    .trophy-icon {
+      width: 64px;
+      height: 64px;
+      margin-bottom: 12px;
+    }
+
+    .trophy-icon.celebrating {
+      animation: trophy-bounce 0.6s ease infinite;
+    }
+
+    @keyframes trophy-bounce {
+      0%, 100% { transform: translateY(0) rotate(-5deg); }
+      50% { transform: translateY(-10px) rotate(5deg); }
+    }
+
+    .champion-label {
+      font-family: 'Oswald', sans-serif;
+      font-size: 14px;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      color: var(--accent-gold);
+      margin-bottom: 8px;
+    }
+
+    .champion-flag {
+      width: 80px;
+      height: 60px;
+      border-radius: 6px;
+      border: 2px solid white;
+      margin-bottom: 8px;
+    }
+
+    .champion-name {
+      font-family: 'Oswald', sans-serif;
+      font-size: 28px;
+      font-weight: 700;
+      color: var(--text-primary);
+    }
+
+    /* Modal */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.85);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      opacity: 0;
+      visibility: hidden;
+      transition: all 0.3s ease;
+    }
+
+    .modal-overlay.active {
+      opacity: 1;
+      visibility: visible;
+    }
+
+    .modal {
+      background: var(--surface);
+      border: 2px solid var(--accent-gold);
+      border-radius: 20px;
+      padding: 32px;
+      width: 90%;
+      max-width: 400px;
+      transform: translateY(20px) scale(0.95);
+      transition: all 0.3s ease;
+    }
+
+    .modal-overlay.active .modal {
+      transform: translateY(0) scale(1);
+    }
+
+    .modal-title {
+      font-family: 'Oswald', sans-serif;
+      font-size: 24px;
+      font-weight: 700;
+      text-align: center;
+      margin-bottom: 24px;
+      color: var(--accent-gold);
+    }
+
+    .modal-teams {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 32px;
+    }
+
+    .modal-team {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .modal-team-flag {
+      width: 64px;
+      height: 48px;
+      border-radius: 6px;
+      border: 2px solid white;
+    }
+
+    .modal-team-name {
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .modal-inputs {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+    }
+
+    .score-input-wrapper {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .score-input {
+      width: 80px;
+      height: 80px;
+      font-family: 'Oswald', sans-serif;
+      font-size: 48px;
+      text-align: center;
+      background: var(--secondary);
+      border: 3px solid var(--accent-cyan);
+      border-radius: 12px;
+      color: var(--text-primary);
+      outline: none;
+      transition: all 0.2s ease;
+    }
+
+    .score-input:focus {
+      border-color: var(--accent-gold);
+      box-shadow: 0 0 20px rgba(255, 215, 0, 0.3);
+    }
+
+    .score-input::-webkit-inner-spin-button,
+    .score-input::-webkit-outer-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+
+    .modal-vs {
+      font-family: 'Oswald', sans-serif;
+      font-size: 20px;
+      color: var(--text-secondary);
+    }
+
+    .modal-actions {
+      display: flex;
+      gap: 12px;
+      margin-top: 32px;
+    }
+
+    .modal-btn {
+      flex: 1;
+      padding: 14px;
+      font-family: 'Oswald', sans-serif;
+      font-size: 16px;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .modal-btn-cancel {
+      background: transparent;
+      border: 2px solid var(--text-secondary);
+      color: var(--text-secondary);
+    }
+
+    .modal-btn-cancel:hover {
+      border-color: var(--text-primary);
+      color: var(--text-primary);
+    }
+
+    .modal-btn-save {
+      background: linear-gradient(135deg, var(--accent-gold), #ffaa00);
+      color: var(--bg);
+    }
+
+    .modal-btn-save:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(255, 215, 0, 0.4);
+    }
+
+    /* Winner animation */
+    .winner-advancing {
+      animation: advance-winner 0.6s ease forwards;
+    }
+
+    @keyframes advance-winner {
+      0% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.1); }
+      100% { transform: scale(1); opacity: 1; }
+    }
+
+    /* Toast notification */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(100px);
+      background: var(--surface);
+      border: 2px solid var(--accent-gold);
+      border-radius: 12px;
+      padding: 16px 24px;
+      font-family: 'Oswald', sans-serif;
+      font-size: 18px;
+      color: var(--accent-gold);
+      z-index: 2000;
+      opacity: 0;
+      transition: all 0.4s ease;
+    }
+
+    .toast.show {
+      transform: translateX(-50%) translateY(0);
+      opacity: 1;
+    }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+      .header-content {
+        flex-direction: column;
+        gap: 16px;
+      }
+
+      .bracket {
+        gap: 24px;
+      }
+
+      .match-card {
+        width: 180px;
+        padding: 10px 12px;
+      }
+
+      .round-qf .matches { gap: 40px; }
+      .round-sf .matches { gap: 100px; }
+    }
+
+    /* Scrollbar styling */
+    ::-webkit-scrollbar {
+      height: 8px;
+      width: 8px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: var(--secondary);
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: var(--primary);
+      border-radius: 4px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: var(--accent-gold);
+    }
+
+    /* Selection */
+    ::selection {
+      background: var(--accent-gold);
+      color: var(--bg);
+    }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <div class="header-content">
+      <h1 class="title">World Cup 2026 Tippspiel</h1>
+      <div class="points-display">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/>
+          <path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/>
+          <path d="M4 22h16"/>
+          <path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/>
+          <path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/>
+          <path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/>
+        </svg>
+        <div>
+          <div class="points-value" id="pointsValue">0</div>
+          <div class="points-label">Punkte</div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <div class="action-bar">
+    <button class="btn btn-reset" id="resetBtn">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+        <path d="M3 3v5h5"/>
+      </svg>
+      Reset
+    </button>
+    <button class="btn btn-simulate" id="simulateBtn">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polygon points="5 3 19 12 5 21 5 3"/>
+      </svg>
+      Simulate
+    </button>
+  </div>
+
+  <div class="bracket-container">
+    <div class="bracket" id="bracket"></div>
+  </div>
+
+  <div class="modal-overlay" id="modalOverlay">
+    <div class="modal">
+      <div class="modal-title">Predict Score</div>
+      <div class="modal-teams">
+        <div class="modal-team">
+          <img class="modal-team-flag" id="modalTeam1Flag" src="" alt="">
+          <span class="modal-team-name" id="modalTeam1Name"></span>
+        </div>
+        <div class="modal-vs">VS</div>
+        <div class="modal-team">
+          <img class="modal-team-flag" id="modalTeam2Flag" src="" alt="">
+          <span class="modal-team-name" id="modalTeam2Name"></span>
+        </div>
+      </div>
+      <div class="modal-inputs">
+        <div class="score-input-wrapper">
+          <input type="number" class="score-input" id="score1Input" min="0" max="9" value="0">
+        </div>
+        <div class="modal-vs">-</div>
+        <div class="score-input-wrapper">
+          <input type="number" class="score-input" id="score2Input" min="0" max="9" value="0">
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="modal-btn modal-btn-cancel" id="modalCancel">Cancel</button>
+        <button class="modal-btn modal-btn-save" id="modalSave">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    // World Cup 2026 Teams with ISO codes for flags
+    const TEAMS = {
+      'BRA': { name: 'Brazil', code: 'br' },
+      'KOR': { name: 'South Korea', code: 'kr' },
+      'JPN': { name: 'Japan', code: 'jp' },
+      'CRO': { name: 'Croatia', code: 'hr' },
+      'FRA': { name: 'France', code: 'fr' },
+      'USA': { name: 'USA', code: 'us' },
+      'MEX': { name: 'Mexico', code: 'mx' },
+      'PAN': { name: 'Panama', code: 'pa' },
+      'ARG': { name: 'Argentina', code: 'ar' },
+      'URU': { name: 'Uruguay', code: 'uy' },
+      'ECU': { name: 'Ecuador', code: 'ec' },
+      'COL': { name: 'Colombia', code: 'co' },
+      'GER': { name: 'Germany', code: 'de' },
+      'NED': { name: 'Netherlands', code: 'nl' },
+      'ITA': { name: 'Italy', code: 'it' },
+      'POR': { name: 'Portugal', code: 'pt' },
+      'ESP': { name: 'Spain', code: 'es' },
+      'ENG': { name: 'England', code: 'gb' },
+      'BEL': { name: 'Belgium', code: 'be' },
+      'SUI': { name: 'Switzerland', code: 'ch' },
+      'POL': { name: 'Poland', code: 'pl' },
+      'WAL': { name: 'Wales', code: 'gb' },
+      'SWE': { name: 'Sweden', code: 'se' },
+      'UKR': { name: 'Ukraine', code: 'ua' },
+      'MAR': { name: 'Morocco', code: 'ma' },
+      'SEN': { name: 'Senegal', code: 'sn' },
+      'ALG': { name: 'Algeria', code: 'dz' },
+      'CMR': { name: 'Cameroon', code: 'cm' },
+      'NGA': { name: 'Nigeria', code: 'ng' },
+      'GHA': { name: 'Ghana', code: 'gh' },
+      'AUS': { name: 'Australia', code: 'au' },
+      'QAT': { name: 'Qatar', code: 'qa' }
+    };
+
+    // Bracket structure
+    const BRACKET = {
+      roundOf16: [
+        { id: 'r16-1', team1: 'BRA', team2: 'KOR' },
+        { id: 'r16-2', team1: 'JPN', team2: 'CRO' },
+        { id: 'r16-3', team1: 'FRA', team2: 'USA' },
+        { id: 'r16-4', team1: 'MEX', team2: 'PAN' },
+        { id: 'r16-5', team1: 'ARG', team2: 'URU' },
+        { id: 'r16-6', team1: 'ECU', team2: 'COL' },
+        { id: 'r16-7', team1: 'GER', team2: 'NED' },
+        { id: 'r16-8', team1: 'ITA', team2: 'POR' }
+      ],
+      quarterfinals: [
+        { id: 'qf-1', team1: null, team2: null },
+        { id: 'qf-2', team1: null, team2: null },
+        { id: 'qf-3', team1: null, team2: null },
+        { id: 'qf-4', team1: null, team2: null }
+      ],
+      semifinals: [
+        { id: 'sf-1', team1: null, team2: null },
+        { id: 'sf-2', team1: null, team2: null }
+      ],
+      final: [
+        { id: 'final', team1: null, team2: null }
+      ]
+    };
+
+    // State management
+    let state = {
+      matches: {},
+      points: 0,
+      champion: null
+    };
+
+    // DOM Elements
+    const bracketEl = document.getElementById('bracket');
+    const modalOverlay = document.getElementById('modalOverlay');
+    const modalTeam1Flag = document.getElementById('modalTeam1Flag');
+    const modalTeam1Name = document.getElementById('modalTeam1Name');
+    const modalTeam2Flag = document.getElementById('modalTeam2Flag');
+    const modalTeam2Name = document.getElementById('modalTeam2Name');
+    const score1Input = document.getElementById('score1Input');
+    const score2Input = document.getElementById('score2Input');
+    const modalCancel = document.getElementById('modalCancel');
+    const modalSave = document.getElementById('modalSave');
+    const resetBtn = document.getElementById('resetBtn');
+    const simulateBtn = document.getElementById('simulateBtn');
+    const pointsValue = document.getElementById('pointsValue');
+    const toast = document.getElementById('toast');
+
+    let currentMatchId = null;
+
+    // Get flag URL
+    function getFlagUrl(code) {
+      return `https://flagcdn.com/w80/${code}.png`;
+    }
+
+    // Show toast notification
+    function showToast(message) {
+      toast.textContent = message;
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 3000);
+    }
+
+    // Update points display
+    function updatePoints(newPoints) {
+      const diff = newPoints - state.points;
+      state.points = newPoints;
+      pointsValue.textContent = state.points;
+      if (diff > 0) {
+        pointsValue.classList.add('bump');
+        setTimeout(() => pointsValue.classList.remove('bump'), 400);
+      }
+    }
+
+    // Calculate points for a match
+    function calculateMatchPoints(matchId) {
+      const match = state.matches[matchId];
+      if (!match || !match.prediction || !match.actual) return 0;
+
+      const predScore1 = match.prediction.score1;
+      const predScore2 = match.prediction.score2;
+      const actualScore1 = match.actual.score1;
+      const actualScore2 = match.actual.score2;
+
+      const predDiff = predScore1 - predScore2;
+      const actualDiff = actualScore1 - actualScore2;
+
+      // Exact result (3 points)
+      if (predScore1 === actualScore1 && predScore2 === actualScore2) {
+        return 3;
+      }
+
+      // Correct winner (1 point)
+      if ((predDiff > 0 && actualDiff > 0) || (predDiff < 0 && actualDiff < 0) || (predDiff === 0 && actualDiff === 0)) {
+        return 1;
+      }
+
+      return 0;
+    }
+
+    // Create match card HTML
+    function createMatchCard(match, round, index) {
+      const team1 = match.team1 ? TEAMS[match.team1] : null;
+      const team2 = match.team2 ? TEAMS[match.team2] : null;
+      const matchState = state.matches[match.id] || {};
+      const prediction = matchState.prediction;
+      const actual = matchState.actual;
+      
+      // Show predicted score if exists
+      const score1 = prediction?.score1 ?? matchState.score1;
+      const score2 = prediction?.score2 ?? matchState.score2;
+      
+      const hasScores = (score1 !== undefined && score1 !== null) || (score2 !== undefined && score2 !== null);
+      const winner = matchState.winner;
+      const isDecided = actual !== undefined && actual !== null;
+
+      const team1Class = winner === match.team1 ? 'winner' : (winner && match.team1 ? 'loser' : '');
+      const team2Class = winner === match.team2 ? 'winner' : (winner && match.team2 ? 'loser' : '');
+
+      const disabled = match.team1 === null || match.team2 === null;
+
+      return `
+        <div class="match-card ${isDecided ? 'decided' : ''} ${disabled ? 'locked' : ''}" 
+             data-match-id="${match.id}" 
+             data-round="${round}"
+             ${disabled ? '' : 'onclick="openModal(\'' + match.id + '\')"'}>
+          <div class="team-row ${team1Class}">
+            <img class="team-flag" src="${team1 ? getFlagUrl(team1.code) : ''}" alt="${team1 ? team1.name : 'TBD'}">
+            <span class="team-name ${team1 ? '' : 'unknown'}">${team1 ? team1.name : '???'}</span>
+            <span class="team-score ${hasScores ? '' : 'empty'}">${hasScores ? score1 : '-'}</span>
+          </div>
+          <div class="team-row ${team2Class}">
+            <img class="team-flag" src="${team2 ? getFlagUrl(team2.code) : ''}" alt="${team2 ? team2.name : 'TBD'}">
+            <span class="team-name ${team2 ? '' : 'unknown'}">${team2 ? team2.name : '???'}</span>
+            <span class="team-score ${hasScores ? '' : 'empty'}">${hasScores ? score2 : '-'}</span>
+          </div>
+          ${!disabled && !isDecided ? '<div class="tap-hint">Tap to predict</div>' : ''}
+        </div>
+      `;
+    }
+
+    // Create champion slot
+    function createChampionSlot() {
+      const champion = state.champion;
+      if (champion && TEAMS[champion]) {
+        const team = TEAMS[champion];
+        return `
+          <div class="champion-slot">
+            <div class="champion-card">
+              <svg class="trophy-icon celebrating" viewBox="0 0 24 24" fill="var(--accent-gold)">
+                <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/>
+                <path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/>
+                <path d="M4 22h16"/>
+                <path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/>
+                <path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/>
+                <path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/>
+              </svg>
+              <div class="champion-label">Champion</div>
+              <img class="champion-flag" src="${getFlagUrl(team.code)}" alt="${team.name}">
+              <div class="champion-name">${team.name}</div>
+            </div>
+          </div>
+        `;
+      }
+      return `
+        <div class="champion-slot">
+          <div class="champion-card" style="border-color: var(--border); box-shadow: none;">
+            <svg class="trophy-icon" viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" stroke-width="1.5" style="opacity: 0.5;">
+              <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/>
+              <path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/>
+              <path d="M4 22h16"/>
+              <path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/>
+              <path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/>
+              <path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/>
+            </svg>
+            <div class="champion-label" style="color: var(--text-secondary);">Champion</div>
+            <div class="champion-name" style="color: var(--text-secondary); opacity: 0.5;">???</div>
+          </div>
+        </div>
+      `;
+    }
+
+    // Render the bracket
+    function renderBracket() {
+      const r16Matches = BRACKET.roundOf16.map(m => {
+        const s = state.matches[m.id];
+        return {
+          ...m,
+          team1: s && s.team1 || m.team1,
+          team2: s && s.team2 || m.team2
+        };
+      });
+
+      const qfMatches = BRACKET.quarterfinals.map(m => {
+        const s = state.matches[m.id];
+        return {
+          ...m,
+          team1: s && s.team1 || m.team1,
+          team2: s && s.team2 || m.team2
+        };
+      });
+
+      const sfMatches = BRACKET.semifinals.map(m => {
+        const s = state.matches[m.id];
+        return {
+          ...m,
+          team1: s && s.team1 || m.team1,
+          team2: s && s.team2 || m.team2
+        };
+      });
+
+      const finalMatch = {
+        ...BRACKET.final[0],
+        ...state.matches['final'],
+        team1: state.matches['final']?.team1 || null,
+        team2: state.matches['final']?.team2 || null
+      };
+
+      bracketEl.innerHTML = `
+        <div class="round round-r16">
+          <div class="round-label">Round of 16</div>
+          <div class="matches">
+            ${r16Matches.map((m, i) => createMatchCard(m, 'roundOf16', i)).join('')}
+          </div>
+        </div>
+        <div class="round round-qf">
+          <div class="round-label">Quarterfinals</div>
+          <div class="matches">
+            ${qfMatches.map((m, i) => createMatchCard(m, 'quarterfinals', i)).join('')}
+          </div>
+        </div>
+        <div class="round round-sf">
+          <div class="round-label">Semifinals</div>
+          <div class="matches">
+            ${sfMatches.map((m, i) => createMatchCard(m, 'semifinals', i)).join('')}
+          </div>
+        </div>
+        <div class="round round-final">
+          <div class="round-label">Final</div>
+          <div class="matches">
+            ${createMatchCard(finalMatch, 'final', 0)}
+          </div>
+        </div>
+        ${createChampionSlot()}
+      `;
+    }
+
+    // Open prediction modal
+    function openModal(matchId) {
+      const match = findMatch(matchId);
+      if (!match || !match.team1 || !match.team2) return;
+
+      currentMatchId = matchId;
+      const team1 = TEAMS[match.team1];
+      const team2 = TEAMS[match.team2];
+      const matchState = state.matches[matchId] || {};
+
+      modalTeam1Flag.src = getFlagUrl(team1.code);
+      modalTeam1Name.textContent = team1.name;
+      modalTeam2Flag.src = getFlagUrl(team2.code);
+      modalTeam2Name.textContent = team2.name;
+      score1Input.value = matchState.score1 !== undefined ? matchState.score1 : 0;
+      score2Input.value = matchState.score2 !== undefined ? matchState.score2 : 0;
+
+      modalOverlay.classList.add('active');
+      score1Input.focus();
+      score1Input.select();
+    }
+
+    // Close modal
+    function closeModal() {
+      modalOverlay.classList.remove('active');
+      currentMatchId = null;
+    }
+
+    // Find match in bracket
+    function findMatch(matchId) {
+      for (const r16 of BRACKET.roundOf16) {
+        if (r16.id === matchId) return r16;
+      }
+      for (const qf of BRACKET.quarterfinals) {
+        if (qf.id === matchId) return qf;
+      }
+      for (const sf of BRACKET.semifinals) {
+        if (sf.id === matchId) return sf;
+      }
+      if (BRACKET.final[0].id === matchId) return BRACKET.final[0];
+      return null;
+    }
+
+    // Save prediction
+    function savePrediction() {
+      if (!currentMatchId) return;
+
+      const score1 = parseInt(score1Input.value) || 0;
+      const score2 = parseInt(score2Input.value) || 0;
+
+      if (!state.matches[currentMatchId]) {
+        state.matches[currentMatchId] = {};
+      }
+
+      const oldWinner = state.matches[currentMatchId]?.winner;
+      const matchData = findMatch(currentMatchId);
+      if (!matchData) return;
+      
+      state.matches[currentMatchId].team1 = matchData.team1;
+      state.matches[currentMatchId].team2 = matchData.team2;
+      
+      // Store prediction separately
+      state.matches[currentMatchId].prediction = { score1, score2 };
+      state.matches[currentMatchId].winner = score1 > score2 ? state.matches[currentMatchId].team1 : 
+                                                score2 > score1 ? state.matches[currentMatchId].team2 : 
+                                                state.matches[currentMatchId].team1;
+
+      const matchId = currentMatchId; // Store before closing modal
+      closeModal();
+      renderBracket();
+
+      // Animate if winner changed
+      if (oldWinner !== state.matches[matchId]?.winner) {
+        animateWinnerAdvancement(matchId);
+      }
+
+      // Update downstream matches
+      updateDownstreamMatches(matchId);
+
+      // Calculate total points
+      calculateAndUpdatePoints();
+    }
+
+    // Animate winner advancement
+    function animateWinnerAdvancement(matchId) {
+      const card = document.querySelector(`[data-match-id="${matchId}"]`);
+      if (card) {
+        card.classList.add('winner-advancing');
+        setTimeout(() => card.classList.remove('winner-advancing'), 600);
+      }
+    }
+
+    // Update downstream matches when a winner is determined
+    function updateDownstreamMatches(matchId) {
+      const match = state.matches[matchId];
+      if (!match || !match.winner) return;
+
+      // Map round of 16 to quarterfinals with proper slot assignment
+      const r16toQf = {
+        'r16-1': { target: 'qf-1', slot: 'team1' },
+        'r16-2': { target: 'qf-1', slot: 'team2' },
+        'r16-3': { target: 'qf-2', slot: 'team1' },
+        'r16-4': { target: 'qf-2', slot: 'team2' },
+        'r16-5': { target: 'qf-3', slot: 'team1' },
+        'r16-6': { target: 'qf-3', slot: 'team2' },
+        'r16-7': { target: 'qf-4', slot: 'team1' },
+        'r16-8': { target: 'qf-4', slot: 'team2' }
+      };
+
+      // Map quarterfinals to semifinals with proper slot assignment
+      const qfToSf = {
+        'qf-1': { target: 'sf-1', slot: 'team1' },
+        'qf-2': { target: 'sf-1', slot: 'team2' },
+        'qf-3': { target: 'sf-2', slot: 'team1' },
+        'qf-4': { target: 'sf-2', slot: 'team2' }
+      };
+
+      // Map semifinals to final
+      const sfToFinal = {
+        'sf-1': { target: 'final', slot: 'team1' },
+        'sf-2': { target: 'final', slot: 'team2' }
+      };
+
+      if (r16toQf[matchId]) {
+        const { target, slot } = r16toQf[matchId];
+        if (!state.matches[target]) {
+          state.matches[target] = {};
+        }
+        state.matches[target][slot] = match.winner;
+      } else if (qfToSf[matchId]) {
+        const { target, slot } = qfToSf[matchId];
+        if (!state.matches[target]) {
+          state.matches[target] = {};
+        }
+        state.matches[target][slot] = match.winner;
+      } else if (sfToFinal[matchId]) {
+        const { target, slot } = sfToFinal[matchId];
+        if (!state.matches[target]) {
+          state.matches[target] = {};
+        }
+        state.matches[target][slot] = match.winner;
+      }
+    }
+    
+    // Calculate and update total points
+    function calculateAndUpdatePoints() {
+      let totalPoints = 0;
+      Object.keys(state.matches).forEach(mid => {
+        try {
+          totalPoints += calculateMatchPoints(mid);
+        } catch (e) {
+          console.log('Error calculating points for', mid, e.message);
+        }
+      });
+      updatePoints(totalPoints);
+    }
+
+    // Reset all predictions
+    function resetPredictions() {
+      state = {
+        matches: {},
+        points: 0,
+        champion: null
+      };
+      pointsValue.textContent = '0';
+      renderBracket();
+      showToast('All predictions cleared!');
+    }
+
+    // Get match from state or bracket definition
+    function getMatchData(matchId) {
+      // Check if it's an R16 match - these have initial teams from BRACKET
+      for (const r16 of BRACKET.roundOf16) {
+        if (r16.id === matchId) return r16;
+      }
+      // For other rounds (QF, SF, Final), check state.matches
+      return state.matches[matchId];
+    }
+    
+    // Check if match has valid teams (from either BRACKET or state)
+    function hasValidTeams(matchId) {
+      const matchData = getMatchData(matchId);
+      return matchData && matchData.team1 && matchData.team2;
+    }
+
+    // Simulate remaining matches with random results
+    function simulateRemaining() {
+      const allMatches = [
+        ...BRACKET.roundOf16.map(m => m.id),
+        ...BRACKET.quarterfinals.map(m => m.id),
+        ...BRACKET.semifinals.map(m => m.id),
+        BRACKET.final[0].id
+      ];
+
+      let delay = 0;
+      const delayStep = 400;
+
+      // Schedule all matches with their delay, checking teams at execution time
+      allMatches.forEach((matchId, index) => {
+        setTimeout(() => {
+          // Check teams at execution time, not scheduling time
+          if (!hasValidTeams(matchId)) return;
+          
+          const stateMatch = state.matches[matchId];
+          // Skip if already has actual scores (simulated)
+          if (stateMatch?.actual !== undefined) return;
+          
+          // Generate random scores (0-3, biased toward lower scores)
+          const weights = [0.35, 0.3, 0.25, 0.1]; // weights for 0, 1, 2, 3
+          let score1 = weightedRandom(weights);
+          let score2 = weightedRandom(weights);
+
+          // Ensure no ties
+          if (score1 === score2) {
+            score1 += Math.random() > 0.4 ? 1 : 0;
+            if (score1 > 3) score1 = 3;
+          }
+
+          if (!state.matches[matchId]) {
+            state.matches[matchId] = {};
+          }
+          
+          const matchData = getMatchData(matchId);
+          const team1Code = state.matches[matchId].team1 || matchData.team1;
+          const team2Code = state.matches[matchId].team2 || matchData.team2;
+          
+          state.matches[matchId].actual = { score1, score2 };
+          state.matches[matchId].score1 = score1;
+          state.matches[matchId].score2 = score2;
+          state.matches[matchId].winner = score1 > score2 ? team1Code : team2Code;
+
+          updateDownstreamMatches(matchId);
+          renderBracket();
+          animateWinnerAdvancement(matchId);
+          calculateAndUpdatePoints();
+
+          if (matchId === 'final') {
+            state.champion = state.matches[matchId].winner;
+            renderBracket();
+            showToast(`Champion: ${TEAMS[state.champion]?.name || state.champion}!`);
+          }
+        }, delay);
+
+
+        delay += delayStep;
+      });
+    }
+
+    // Weighted random selection
+    function weightedRandom(weights) {
+      const sum = weights.reduce((a, b) => a + b, 0);
+      let random = Math.random() * sum;
+      for (let i = 0; i < weights.length; i++) {
+        random -= weights[i];
+        if (random <= 0) return i;
+      }
+      return weights.length - 1;
+    }
+
+    // Event listeners
+    modalCancel.addEventListener('click', closeModal);
+    modalSave.addEventListener('click', savePrediction);
+    resetBtn.addEventListener('click', resetPredictions);
+    simulateBtn.addEventListener('click', simulateRemaining);
+
+    modalOverlay.addEventListener('click', (e) => {
+      if (e.target === modalOverlay) closeModal();
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeModal();
+      if (e.key === 'Enter' && modalOverlay.classList.contains('active')) savePrediction();
+    });
+
+    // Initialize
+    renderBracket();
+  </script>
+</body>
+</html>

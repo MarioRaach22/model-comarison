@@ -1,0 +1,1398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>World Language Explorer</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/topojson/3.0.2/topojson.min.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  display: flex; height: 100vh; overflow: hidden; background: #f5f7fa; color: #1a1a2e;
+}
+#sidebar {
+  width: 340px; min-width: 340px; background: #fff; display: flex; flex-direction: column;
+  border-right: 1px solid #e0e0e0; z-index: 10; overflow-y: auto;
+}
+#sidebar-header {
+  padding: 20px 20px 12px; border-bottom: 1px solid #eee;
+}
+#sidebar-header h1 {
+  font-size: 20px; font-weight: 700; color: #1a1a2e; letter-spacing: -0.3px;
+}
+#sidebar-header .subtitle {
+  font-size: 13px; color: #888; margin-top: 4px;
+}
+#search-section { padding: 12px 20px; border-bottom: 1px solid #eee; position: relative; }
+#search-input {
+  width: 100%; padding: 10px 14px; border: 2px solid #e0e0e0; border-radius: 8px;
+  font-size: 14px; outline: none; transition: border-color 0.2s;
+}
+#search-input:focus { border-color: #4e79a7; }
+#search-results {
+  position: absolute; top: 100%; left: 20px; right: 20px; background: #fff;
+  border: 1px solid #ddd; border-radius: 0 0 8px 8px; max-height: 200px;
+  overflow-y: auto; z-index: 100; display: none; box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+#search-results .sr-item {
+  padding: 8px 14px; cursor: pointer; font-size: 13px; border-bottom: 1px solid #f0f0f0;
+  transition: background 0.15s;
+}
+#search-results .sr-item:last-child { border-bottom: none; }
+#search-results .sr-item:hover, #search-results .sr-item.active { background: #f0f4f8; }
+#search-results .sr-item .has-data { color: #4e79a7; font-weight: 600; }
+#search-results .sr-item .no-data { color: #999; }
+#controls-section { padding: 12px 20px; border-bottom: 1px solid #eee; }
+#legend-section { padding: 12px 20px; border-bottom: 1px solid #eee; display: none; }
+#legend-section h3 { font-size: 13px; font-weight: 600; color: #555; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+#legend-items { display: flex; flex-direction: column; gap: 4px; }
+.legend-item { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.legend-item .color-box { width: 14px; height: 14px; border-radius: 3px; flex-shrink: 0; border: 1px solid rgba(0,0,0,0.1); }
+/* Toggle switch */
+.toggle-wrap { display: flex; align-items: center; gap: 10px; cursor: pointer; }
+.toggle-wrap input { display: none; }
+.toggle-track {
+  width: 36px; height: 20px; background: #ccc; border-radius: 10px; position: relative;
+  transition: background 0.25s; flex-shrink: 0;
+}
+.toggle-track::after {
+  content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px;
+  background: #fff; border-radius: 50%; transition: transform 0.25s; box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+.toggle-wrap input:checked + .toggle-track { background: #4e79a7; }
+.toggle-wrap input:checked + .toggle-track::after { transform: translateX(16px); }
+.toggle-label { font-size: 13px; font-weight: 500; color: #444; }
+
+#info-section { flex: 1; padding: 16px 20px; overflow-y: auto; }
+#info-section .hint {
+  color: #999; font-size: 14px; text-align: center; padding: 40px 10px; line-height: 1.6;
+}
+#info-content .country-name {
+  font-size: 22px; font-weight: 700; color: #1a1a2e; margin-bottom: 12px;
+}
+#info-content .family-badge {
+  display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 11px;
+  font-weight: 600; color: #fff; margin-bottom: 14px;
+}
+.lang-list { list-style: none; }
+.lang-item {
+  padding: 6px 0; border-bottom: 1px solid #f0f0f0; font-size: 14px;
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.lang-item:last-child { border-bottom: none; }
+.lang-name { font-weight: 500; }
+.lang-status {
+  font-size: 10px; padding: 2px 7px; border-radius: 8px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.3px;
+}
+.status-official { background: #e3f2fd; color: #1565c0; }
+.status-wide { background: #fce4ec; color: #c62828; }
+.lang-family { font-size: 12px; color: #888; }
+.no-data-msg {
+  text-align: center; color: #999; padding: 40px 10px; font-size: 14px; line-height: 1.6;
+}
+.no-data-msg .emoji { font-size: 32px; display: block; margin-bottom: 10px; }
+
+#map-container {
+  flex: 1; position: relative; overflow: hidden;
+}
+#map-container svg { width: 100%; height: 100%; display: block; }
+#map-container .ocean { fill: #d4e9f7; }
+.country {
+  fill: #f5f5f5; stroke: #c0c0c0; stroke-width: 0.5; cursor: pointer;
+  transition: fill 0.15s, stroke 0.15s;
+}
+.country:hover { stroke: #333; stroke-width: 1; }
+.country.hovered { stroke: #1a1a2e; stroke-width: 1.5; }
+.country.selected { stroke: #1a1a2e; stroke-width: 2; }
+.country.no-data { fill: #e8e8e8; }
+.tooltip {
+  position: absolute; padding: 6px 12px; background: rgba(0,0,0,0.8); color: #fff;
+  border-radius: 6px; font-size: 13px; pointer-events: none; z-index: 1000;
+  white-space: nowrap; display: none; box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+}
+.tooltip::after {
+  content: ''; position: absolute; top: 100%; left: 50%; margin-left: -4px;
+  border: 4px solid transparent; border-top-color: rgba(0,0,0,0.8);
+}
+
+@media (max-width: 720px) {
+  body { flex-direction: column; }
+  #sidebar { width: 100%; min-width: auto; max-height: 45vh; border-right: none; border-bottom: 1px solid #e0e0e0; }
+  #map-container { height: 55vh; }
+}
+</style>
+</head>
+<body>
+
+<div id="sidebar">
+  <div id="sidebar-header">
+    <h1>🗺️ World Language Explorer</h1>
+    <div class="subtitle">Click a country to explore its languages</div>
+  </div>
+
+  <div id="search-section">
+    <input type="text" id="search-input" placeholder="Search for a country..." autocomplete="off">
+    <div id="search-results"></div>
+  </div>
+
+  <div id="controls-section">
+    <label class="toggle-wrap">
+      <input type="checkbox" id="family-toggle">
+      <span class="toggle-track"></span>
+      <span class="toggle-label">Color by language family</span>
+    </label>
+  </div>
+
+  <div id="legend-section">
+    <h3>Language Families</h3>
+    <div id="legend-items"></div>
+  </div>
+
+  <div id="info-section">
+    <div id="info-content">
+      <p class="hint">🌍 Click on any country to see its languages, or search above to zoom to a country.</p>
+    </div>
+  </div>
+</div>
+
+<div id="map-container">
+  <svg id="map"></svg>
+  <div id="tooltip" class="tooltip"></div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+//  LANGUAGE DATA — embedded inline
+// ═══════════════════════════════════════════════════════════════
+const langData = {
+  "Afghanistan": { languages: [
+    { name: "Pashto", status: "official", family: "Indo-Iranian" },
+    { name: "Dari (Persian)", status: "official", family: "Indo-Iranian" }
+  ]},
+  "Albania": { languages: [
+    { name: "Albanian", status: "official", family: "Albanian" }
+  ]},
+  "Algeria": { languages: [
+    { name: "Arabic", status: "official", family: "Afroasiatic" },
+    { name: "Berber (Tamazight)", status: "official", family: "Afroasiatic" },
+    { name: "French", status: "wide", family: "Romance" }
+  ]},
+  "Angola": { languages: [
+    { name: "Portuguese", status: "official", family: "Romance" },
+    { name: "Kimbundu", status: "wide", family: "Niger-Congo" },
+    { name: "Umbundu", status: "wide", family: "Niger-Congo" },
+    { name: "Kikongo", status: "wide", family: "Niger-Congo" }
+  ]},
+  "Argentina": { languages: [
+    { name: "Spanish", status: "official", family: "Romance" }
+  ]},
+  "Armenia": { languages: [
+    { name: "Armenian", status: "official", family: "Armenian" }
+  ]},
+  "Australia": { languages: [
+    { name: "English", status: "official", family: "Germanic" }
+  ]},
+  "Austria": { languages: [
+    { name: "German", status: "official", family: "Germanic" }
+  ]},
+  "Azerbaijan": { languages: [
+    { name: "Azerbaijani", status: "official", family: "Turkic" }
+  ]},
+  "Bahamas": { languages: [
+    { name: "English", status: "official", family: "Germanic" }
+  ]},
+  "Bangladesh": { languages: [
+    { name: "Bengali", status: "official", family: "Indo-Iranian" },
+    { name: "English", status: "wide", family: "Germanic" }
+  ]},
+  "Belarus": { languages: [
+    { name: "Belarusian", status: "official", family: "Slavic" },
+    { name: "Russian", status: "official", family: "Slavic" }
+  ]},
+  "Belgium": { languages: [
+    { name: "Dutch", status: "official", family: "Germanic" },
+    { name: "French", status: "official", family: "Romance" },
+    { name: "German", status: "official", family: "Germanic" }
+  ]},
+  "Belize": { languages: [
+    { name: "English", status: "official", family: "Germanic" },
+    { name: "Spanish", status: "wide", family: "Romance" },
+    { name: "Kriol", status: "wide", family: "Creole" }
+  ]},
+  "Benin": { languages: [
+    { name: "French", status: "official", family: "Romance" },
+    { name: "Fon", status: "wide", family: "Niger-Congo" },
+    { name: "Yoruba", status: "wide", family: "Niger-Congo" }
+  ]},
+  "Bhutan": { languages: [
+    { name: "Dzongkha", status: "official", family: "Sino-Tibetan" }
+  ]},
+  "Bolivia": { languages: [
+    { name: "Spanish", status: "official", family: "Romance" },
+    { name: "Quechua", status: "official", family: "Quechuan" },
+    { name: "Aymara", status: "official", family: "Aymaran" },
+    { name: "Guaraní", status: "official", family: "Tupian" }
+  ]},
+  "Bosnia and Herz.": { languages: [
+    { name: "Bosnian", status: "official", family: "Slavic" },
+    { name: "Croatian", status: "official", family: "Slavic" },
+    { name: "Serbian", status: "official", family: "Slavic" }
+  ]},
+  "Botswana": { languages: [
+    { name: "English", status: "official", family: "Germanic" },
+    { name: "Tswana", status: "official", family: "Niger-Congo" }
+  ]},
+  "Brazil": { languages: [
+    { name: "Portuguese", status: "official", family: "Romance" }
+  ]},
+  "Brunei": { languages: [
+    { name: "Malay", status: "official", family: "Austronesian" },
+    { name: "English", status: "wide", family: "Germanic" },
+    { name: "Chinese (Hokkien)", status: "wide", family: "Sino-Tibetan" }
+  ]},
+  "Bulgaria": { languages: [
+    { name: "Bulgarian", status: "official", family: "Slavic" }
+  ]},
+  "Burkina Faso": { languages: [
+    { name: "French", status: "official", family: "Romance" },
+    { name: "Mòoré", status: "wide", family: "Niger-Congo" }
+  ]},
+  "Burundi": { languages: [
+    { name: "Kirundi", status: "official", family: "Niger-Congo" },
+    { name: "French", status: "official", family: "Romance" },
+    { name: "English", status: "official", family: "Germanic" }
+  ]},
+  "Cambodia": { languages: [
+    { name: "Khmer", status: "official", family: "Austroasiatic" }
+  ]},
+  "Cameroon": { languages: [
+    { name: "French", status: "official", family: "Romance" },
+    { name: "English", status: "official", family: "Germanic" }
+  ]},
+  "Canada": { languages: [
+    { name: "English", status: "official", family: "Germanic" },
+    { name: "French", status: "official", family: "Romance" },
+    { name: "Inuktitut", status: "wide", family: "Eskimo-Aleut" }
+  ]},
+  "Central African Rep.": { languages: [
+    { name: "French", status: "official", family: "Romance" },
+    { name: "Sango", status: "official", family: "Niger-Congo" }
+  ]},
+  "Chad": { languages: [
+    { name: "French", status: "official", family: "Romance" },
+    { name: "Arabic", status: "official", family: "Afroasiatic" }
+  ]},
+  "Chile": { languages: [
+    { name: "Spanish", status: "official", family: "Romance" }
+  ]},
+  "China": { languages: [
+    { name: "Mandarin Chinese", status: "official", family: "Sino-Tibetan" },
+    { name: "Cantonese", status: "wide", family: "Sino-Tibetan" },
+    { name: "Tibetan", status: "wide", family: "Sino-Tibetan" },
+    { name: "Uyghur", status: "wide", family: "Turkic" },
+    { name: "Mongolian", status: "wide", family: "Mongolic" },
+    { name: "Zhuang", status: "wide", family: "Tai-Kadai" }
+  ]},
+  "Colombia": { languages: [
+    { name: "Spanish", status: "official", family: "Romance" }
+  ]},
+  "Congo": { languages: [
+    { name: "French", status: "official", family: "Romance" },
+    { name: "Lingala", status: "wide", family: "Niger-Congo" },
+    { name: "Kituba", status: "wide", family: "Niger-Congo" }
+  ]},
+  "Costa Rica": { languages: [
+    { name: "Spanish", status: "official", family: "Romance" }
+  ]},
+  "Croatia": { languages: [
+    { name: "Croatian", status: "official", family: "Slavic" }
+  ]},
+  "Cuba": { languages: [
+    { name: "Spanish", status: "official", family: "Romance" }
+  ]},
+  "Cyprus": { languages: [
+    { name: "Greek", status: "official", family: "Hellenic" },
+    { name: "Turkish", status: "official", family: "Turkic" }
+  ]},
+  "Czechia": { languages: [
+    { name: "Czech", status: "official", family: "Slavic" }
+  ]},
+  "Côte d'Ivoire": { languages: [
+    { name: "French", status: "official", family: "Romance" },
+    { name: "Dioula", status: "wide", family: "Niger-Congo" }
+  ]},
+  "Dem. Rep. Congo": { languages: [
+    { name: "French", status: "official", family: "Romance" },
+    { name: "Lingala", status: "national", family: "Niger-Congo" },
+    { name: "Swahili", status: "national", family: "Niger-Congo" },
+    { name: "Kikongo", status: "national", family: "Niger-Congo" },
+    { name: "Tshiluba", status: "national", family: "Niger-Congo" }
+  ]},
+  "Denmark": { languages: [
+    { name: "Danish", status: "official", family: "Germanic" }
+  ]},
+  "Djibouti": { languages: [
+    { name: "Arabic", status: "official", family: "Afroasiatic" },
+    { name: "French", status: "official", family: "Romance" },
+    { name: "Somali", status: "wide", family: "Afroasiatic" },
+    { name: "Afar", status: "wide", family: "Afroasiatic" }
+  ]},
+  "Dominican Rep.": { languages: [
+    { name: "Spanish", status: "official", family: "Romance" }
+  ]},
+  "Ecuador": { languages: [
+    { name: "Spanish", status: "official", family: "Romance" },
+    { name: "Kichwa (Quechua)", status: "wide", family: "Quechuan" }
+  ]},
+  "Egypt": { languages: [
+    { name: "Arabic", status: "official", family: "Afroasiatic" },
+    { name: "Egyptian Arabic", status: "wide", family: "Afroasiatic" }
+  ]},
+  "El Salvador": { languages: [
+    { name: "Spanish", status: "official", family: "Romance" }
+  ]},
+  "Eq. Guinea": { languages: [
+    { name: "Spanish", status: "official", family: "Romance" },
+    { name: "French", status: "official", family: "Romance" },
+    { name: "Portuguese", status: "official", family: "Romance" }
+  ]},
+  "Eritrea": { languages: [
+    { name: "Tigrinya", status: "official", family: "Afroasiatic" },
+    { name: "Arabic", status: "official", family: "Afroasiatic" },
+    { name: "English", status: "official", family: "Germanic" },
+    { name: "Tigre", status: "wide", family: "Afroasiatic" },
+    { name: "Afar", status: "wide", family: "Afroasiatic" }
+  ]},
+  "Estonia": { languages: [
+    { name: "Estonian", status: "official", family: "Uralic" },
+    { name: "Russian", status: "wide", family: "Slavic" }
+  ]},
+  "Ethiopia": { languages: [
+    { name: "Amharic", status: "official", family: "Afroasiatic" },
+    { name: "Oromo", status: "wide", family: "Afroasiatic" },
+    { name: "Somali", status: "wide", family: "Afroasiatic" },
+    { name: "Tigrinya", status: "wide", family: "Afroasiatic" }
+  ]},
+  "Falkland Is.": { languages: [
+    { name: "English", status: "official", family: "Germanic" }
+  ]},
+  "Fiji": { languages: [
+    { name: "English", status: "official", family: "Germanic" },
+    { name: "Fijian", status: "official", family: "Austronesian" },
+    { name: "Fiji Hindi", status: "official", family: "Indo-Iranian" }
+  ]},
+  "Finland": { languages: [
+    { name: "Finnish", status: "official", family: "Uralic" },
+    { name: "Swedish", status: "official", family: "Germanic" }
+  ]},
+  "France": { languages: [
+    { name: "French", status: "official", family: "Romance" }
+  ]},
+  "Gabon": { languages: [
+    { name: "French", status: "official", family: "Romance" }
+  ]},
+  "Gambia": { languages: [
+    { name: "English", status: "official", family: "Germanic" },
+    { name: "Mandinka", status: "wide", family: "Niger-Congo" },
+    { name: "Fula", status: "wide", family: "Niger-Congo" },
+    { name: "Wolof", status: "wide", family: "Niger-Congo" }
+  ]},
+  "Georgia": { languages: [
+    { name: "Georgian", status: "official", family: "Kartvelian" }
+  ]},
+  "Germany": { languages: [
+    { name: "German", status: "official", family: "Germanic" }
+  ]},
+  "Ghana": { languages: [
+    { name: "English", status: "official", family: "Germanic" },
+    { name: "Akan (Twi)", status: "wide", family: "Niger-Congo" },
+    { name: "Ewe", status: "wide", family: "Niger-Congo" },
+    { name: "Dagbani", status: "wide", family: "Niger-Congo" }
+  ]},
+  "Greece": { languages: [
+    { name: "Greek", status: "official", family: "Hellenic" }
+  ]},
+  "Greenland": { languages: [
+    { name: "Greenlandic (Kalaallisut)", status: "official", family: "Eskimo-Aleut" },
+    { name: "Danish", status: "wide", family: "Germanic" }
+  ]},
+  "Guatemala": { languages: [
+    { name: "Spanish", status: "official", family: "Romance" }
+  ]},
+  "Guinea": { languages: [
+    { name: "French", status: "official", family: "Romance" },
+    { name: "Fula", status: "wide", family: "Niger-Congo" },
+    { name: "Maninka", status: "wide", family: "Niger-Congo" },
+    { name: "Susu", status: "wide", family: "Niger-Congo" }
+  ]},
+  "Guinea-Bissau": { languages: [
+    { name: "Portuguese", status: "official", family: "Romance" },
+    { name: "Upper Guinea Creole", status: "wide", family: "Creole" }
+  ]},
+  "Guyana": { languages: [
+    { name: "English", status: "official", family: "Germanic" }
+  ]},
+  "Haiti": { languages: [
+    { name: "Haitian Creole", status: "official", family: "Creole" },
+    { name: "French", status: "official", family: "Romance" }
+  ]},
+  "Honduras": { languages: [
+    { name: "Spanish", status: "official", family: "Romance" }
+  ]},
+  "Hungary": { languages: [
+    { name: "Hungarian", status: "official", family: "Uralic" }
+  ]},
+  "Iceland": { languages: [
+    { name: "Icelandic", status: "official", family: "Germanic" }
+  ]},
+  "India": { languages: [
+    { name: "Hindi", status: "official", family: "Indo-Iranian" },
+    { name: "English", status: "official", family: "Germanic" },
+    { name: "Bengali", status: "official", family: "Indo-Iranian" },
+    { name: "Telugu", status: "official", family: "Dravidian" },
+    { name: "Marathi", status: "official", family: "Indo-Iranian" },
+    { name: "Tamil", status: "official", family: "Dravidian" },
+    { name: "Urdu", status: "official", family: "Indo-Iranian" },
+    { name: "Gujarati", status: "official", family: "Indo-Iranian" },
+    { name: "Kannada", status: "official", family: "Dravidian" },
+    { name: "Malayalam", status: "official", family: "Dravidian" },
+    { name: "Odia", status: "official", family: "Indo-Iranian" },
+    { name: "Punjabi", status: "official", family: "Indo-Iranian" },
+    { name: "Assamese", status: "official", family: "Indo-Iranian" },
+    { name: "Maithili", status: "official", family: "Indo-Iranian" },
+    { name: "Santhali", status: "official", family: "Austroasiatic" },
+    { name: "Kashmiri", status: "official", family: "Indo-Iranian" },
+    { name: "Nepali", status: "official", family: "Indo-Iranian" },
+    { name: "Sindhi", status: "official", family: "Indo-Iranian" },
+    { name: "Dogri", status: "official", family: "Indo-Iranian" },
+    { name: "Konkani", status: "official", family: "Indo-Iranian" },
+    { name: "Manipuri (Meitei)", status: "official", family: "Sino-Tibetan" },
+    { name: "Sanskrit", status: "official", family: "Indo-Iranian" },
+    { name: "Bodo", status: "official", family: "Sino-Tibetan" }
+  ]},
+  "Indonesia": { languages: [
+    { name: "Indonesian", status: "official", family: "Austronesian" },
+    { name: "Javanese", status: "wide", family: "Austronesian" },
+    { name: "Sundanese", status: "wide", family: "Austronesian" }
+  ]},
+  "Iran": { languages: [
+    { name: "Persian (Farsi)", status: "official", family: "Indo-Iranian" },
+    { name: "Azerbaijani", status: "wide", family: "Turkic" },
+    { name: "Kurdish", status: "wide", family: "Indo-Iranian" }
+  ]},
+  "Iraq": { languages: [
+    { name: "Arabic", status: "official", family: "Afroasiatic" },
+    { name: "Kurdish", status: "official", family: "Indo-Iranian" },
+    { name: "Turkmen", status: "wide", family: "Turkic" }
+  ]},
+  "Ireland": { languages: [
+    { name: "Irish", status: "official", family: "Celtic" },
+    { name: "English", status: "official", family: "Germanic" }
+  ]},
+  "Israel": { languages: [
+    { name: "Hebrew", status: "official", family: "Afroasiatic" },
+    { name: "Arabic", status: "official", family: "Afroasiatic" },
+    { name: "English", status: "wide", family: "Germanic" }
+  ]},
+  "Italy": { languages: [
+    { name: "Italian", status: "official", family: "Romance" },
+    { name: "German", status: "wide", family: "Germanic" },
+    { name: "French", status: "wide", family: "Romance" },
+    { name: "Slovene", status: "wide", family: "Slavic" }
+  ]},
+  "Jamaica": { languages: [
+    { name: "English", status: "official", family: "Germanic" },
+    { name: "Jamaican Patois", status: "wide", family: "Creole" }
+  ]},
+  "Japan": { languages: [
+    { name: "Japanese", status: "official", family: "Japonic" }
+  ]},
+  "Jordan": { languages: [
+    { name: "Arabic", status: "official", family: "Afroasiatic" },
+    { name: "English", status: "wide", family: "Germanic" }
+  ]},
+  "Kazakhstan": { languages: [
+    { name: "Kazakh", status: "official", family: "Turkic" },
+    { name: "Russian", status: "official", family: "Slavic" }
+  ]},
+  "Kenya": { languages: [
+    { name: "Swahili", status: "official", family: "Niger-Congo" },
+    { name: "English", status: "official", family: "Germanic" },
+    { name: "Kikuyu", status: "wide", family: "Niger-Congo" },
+    { name: "Luo", status: "wide", family: "Nilo-Saharan" },
+    { name: "Kamba", status: "wide", family: "Niger-Congo" }
+  ]},
+  "Kosovo": { languages: [
+    { name: "Albanian", status: "official", family: "Albanian" },
+    { name: "Serbian", status: "official", family: "Slavic" }
+  ]},
+  "Kuwait": { languages: [
+    { name: "Arabic", status: "official", family: "Afroasiatic" },
+    { name: "English", status: "wide", family: "Germanic" }
+  ]},
+  "Kyrgyzstan": { languages: [
+    { name: "Kyrgyz", status: "official", family: "Turkic" },
+    { name: "Russian", status: "official", family: "Slavic" }
+  ]},
+  "Laos": { languages: [
+    { name: "Lao", status: "official", family: "Tai-Kadai" },
+    { name: "French", status: "wide", family: "Romance" }
+  ]},
+  "Latvia": { languages: [
+    { name: "Latvian", status: "official", family: "Baltic" },
+    { name: "Russian", status: "wide", family: "Slavic" }
+  ]},
+  "Lebanon": { languages: [
+    { name: "Arabic", status: "official", family: "Afroasiatic" },
+    { name: "French", status: "wide", family: "Romance" },
+    { name: "English", status: "wide", family: "Germanic" }
+  ]},
+  "Lesotho": { languages: [
+    { name: "Sesotho", status: "official", family: "Niger-Congo" },
+    { name: "English", status: "official", family: "Germanic" }
+  ]},
+  "Liberia": { languages: [
+    { name: "English", status: "official", family: "Germanic" }
+  ]},
+  "Libya": { languages: [
+    { name: "Arabic", status: "official", family: "Afroasiatic" },
+    { name: "Berber", status: "wide", family: "Afroasiatic" }
+  ]},
+  "Lithuania": { languages: [
+    { name: "Lithuanian", status: "official", family: "Baltic" },
+    { name: "Russian", status: "wide", family: "Slavic" }
+  ]},
+  "Luxembourg": { languages: [
+    { name: "Luxembourgish", status: "official", family: "Germanic" },
+    { name: "French", status: "official", family: "Romance" },
+    { name: "German", status: "official", family: "Germanic" }
+  ]},
+  "Macedonia": { languages: [
+    { name: "Macedonian", status: "official", family: "Slavic" },
+    { name: "Albanian", status: "wide", family: "Albanian" }
+  ]},
+  "Madagascar": { languages: [
+    { name: "Malagasy", status: "official", family: "Austronesian" },
+    { name: "French", status: "official", family: "Romance" }
+  ]},
+  "Malawi": { languages: [
+    { name: "English", status: "official", family: "Germanic" },
+    { name: "Chichewa", status: "official", family: "Niger-Congo" }
+  ]},
+  "Malaysia": { languages: [
+    { name: "Malay", status: "official", family: "Austronesian" },
+    { name: "English", status: "wide", family: "Germanic" },
+    { name: "Chinese (Mandarin)", status: "wide", family: "Sino-Tibetan" },
+    { name: "Tamil", status: "wide", family: "Dravidian" }
+  ]},
+  "Mali": { languages: [
+    { name: "French", status: "official", family: "Romance" },
+    { name: "Bambara", status: "wide", family: "Niger-Congo" },
+    { name: "Fula", status: "wide", family: "Niger-Congo" }
+  ]},
+  "Mauritania": { languages: [
+    { name: "Arabic", status: "official", family: "Afroasiatic" },
+    { name: "Hassaniya Arabic", status: "wide", family: "Afroasiatic" },
+    { name: "French", status: "wide", family: "Romance" }
+  ]},
+  "Mexico": { languages: [
+    { name: "Spanish", status: "official", family: "Romance" },
+    { name: "Nahuatl", status: "wide", family: "Uto-Aztecan" },
+    { name: "Yucatec Maya", status: "wide", family: "Mayan" }
+  ]},
+  "Moldova": { languages: [
+    { name: "Romanian", status: "official", family: "Romance" },
+    { name: "Russian", status: "wide", family: "Slavic" }
+  ]},
+  "Mongolia": { languages: [
+    { name: "Mongolian (Khalkha)", status: "official", family: "Mongolic" }
+  ]},
+  "Montenegro": { languages: [
+    { name: "Montenegrin", status: "official", family: "Slavic" },
+    { name: "Serbian", status: "wide", family: "Slavic" },
+    { name: "Bosnian", status: "wide", family: "Slavic" },
+    { name: "Albanian", status: "wide", family: "Albanian" }
+  ]},
+  "Morocco": { languages: [
+    { name: "Arabic", status: "official", family: "Afroasiatic" },
+    { name: "Berber (Tamazight)", status: "official", family: "Afroasiatic" },
+    { name: "French", status: "wide", family: "Romance" }
+  ]},
+  "Mozambique": { languages: [
+    { name: "Portuguese", status: "official", family: "Romance" },
+    { name: "Makhuwa", status: "wide", family: "Niger-Congo" },
+    { name: "Tsonga", status: "wide", family: "Niger-Congo" },
+    { name: "Sena", status: "wide", family: "Niger-Congo" }
+  ]},
+  "Myanmar": { languages: [
+    { name: "Burmese", status: "official", family: "Sino-Tibetan" },
+    { name: "Shan", status: "wide", family: "Tai-Kadai" },
+    { name: "Karen", status: "wide", family: "Sino-Tibetan" },
+    { name: "Rakhine", status: "wide", family: "Sino-Tibetan" }
+  ]},
+  "N. Cyprus": { languages: [
+    { name: "Turkish", status: "official", family: "Turkic" }
+  ]},
+  "Namibia": { languages: [
+    { name: "English", status: "official", family: "Germanic" },
+    { name: "Afrikaans", status: "wide", family: "Germanic" },
+    { name: "German", status: "wide", family: "Germanic" },
+    { name: "Oshiwambo", status: "wide", family: "Niger-Congo" }
+  ]},
+  "Nepal": { languages: [
+    { name: "Nepali", status: "official", family: "Indo-Iranian" },
+    { name: "Maithili", status: "wide", family: "Indo-Iranian" },
+    { name: "Bhojpuri", status: "wide", family: "Indo-Iranian" }
+  ]},
+  "Netherlands": { languages: [
+    { name: "Dutch", status: "official", family: "Germanic" },
+    { name: "Frisian", status: "official", family: "Germanic" }
+  ]},
+  "New Caledonia": { languages: [
+    { name: "French", status: "official", family: "Romance" }
+  ]},
+  "New Zealand": { languages: [
+    { name: "English", status: "official", family: "Germanic" },
+    { name: "Māori", status: "official", family: "Austronesian" },
+    { name: "NZ Sign Language", status: "official", family: "Sign Language" }
+  ]},
+  "Nicaragua": { languages: [
+    { name: "Spanish", status: "official", family: "Romance" }
+  ]},
+  "Niger": { languages: [
+    { name: "French", status: "official", family: "Romance" },
+    { name: "Hausa", status: "wide", family: "Afroasiatic" },
+    { name: "Zarma", status: "wide", family: "Nilo-Saharan" },
+    { name: "Fula", status: "wide", family: "Niger-Congo" }
+  ]},
+  "Nigeria": { languages: [
+    { name: "English", status: "official", family: "Germanic" },
+    { name: "Hausa", status: "wide", family: "Afroasiatic" },
+    { name: "Yoruba", status: "wide", family: "Niger-Congo" },
+    { name: "Igbo", status: "wide", family: "Niger-Congo" },
+    { name: "Fula", status: "wide", family: "Niger-Congo" },
+    { name: "Ibibio", status: "wide", family: "Niger-Congo" }
+  ]},
+  "North Korea": { languages: [
+    { name: "Korean", status: "official", family: "Koreanic" }
+  ]},
+  "Norway": { languages: [
+    { name: "Norwegian", status: "official", family: "Germanic" },
+    { name: "Sami", status: "official", family: "Uralic" }
+  ]},
+  "Oman": { languages: [
+    { name: "Arabic", status: "official", family: "Afroasiatic" },
+    { name: "English", status: "wide", family: "Germanic" }
+  ]},
+  "Pakistan": { languages: [
+    { name: "Urdu", status: "official", family: "Indo-Iranian" },
+    { name: "English", status: "official", family: "Germanic" },
+    { name: "Punjabi", status: "wide", family: "Indo-Iranian" },
+    { name: "Sindhi", status: "wide", family: "Indo-Iranian" },
+    { name: "Pashto", status: "wide", family: "Indo-Iranian" },
+    { name: "Balochi", status: "wide", family: "Indo-Iranian" },
+    { name: "Saraiki", status: "wide", family: "Indo-Iranian" }
+  ]},
+  "Palestine": { languages: [
+    { name: "Arabic", status: "official", family: "Afroasiatic" },
+    { name: "English", status: "wide", family: "Germanic" }
+  ]},
+  "Panama": { languages: [
+    { name: "Spanish", status: "official", family: "Romance" }
+  ]},
+  "Papua New Guinea": { languages: [
+    { name: "English", status: "official", family: "Germanic" },
+    { name: "Tok Pisin", status: "official", family: "Creole" },
+    { name: "Hiri Motu", status: "official", family: "Austronesian" },
+    { name: "Sign Language", status: "official", family: "Sign Language" }
+  ]},
+  "Paraguay": { languages: [
+    { name: "Spanish", status: "official", family: "Romance" },
+    { name: "Guaraní", status: "official", family: "Tupian" }
+  ]},
+  "Peru": { languages: [
+    { name: "Spanish", status: "official", family: "Romance" },
+    { name: "Quechua", status: "official", family: "Quechuan" },
+    { name: "Aymara", status: "official", family: "Aymaran" }
+  ]},
+  "Philippines": { languages: [
+    { name: "Filipino", status: "official", family: "Austronesian" },
+    { name: "English", status: "official", family: "Germanic" },
+    { name: "Cebuano", status: "wide", family: "Austronesian" },
+    { name: "Ilocano", status: "wide", family: "Austronesian" }
+  ]},
+  "Poland": { languages: [
+    { name: "Polish", status: "official", family: "Slavic" }
+  ]},
+  "Portugal": { languages: [
+    { name: "Portuguese", status: "official", family: "Romance" },
+    { name: "Mirandese", status: "official", family: "Romance" }
+  ]},
+  "Puerto Rico": { languages: [
+    { name: "Spanish", status: "official", family: "Romance" },
+    { name: "English", status: "official", family: "Germanic" }
+  ]},
+  "Qatar": { languages: [
+    { name: "Arabic", status: "official", family: "Afroasiatic" },
+    { name: "English", status: "wide", family: "Germanic" }
+  ]},
+  "Romania": { languages: [
+    { name: "Romanian", status: "official", family: "Romance" }
+  ]},
+  "Russia": { languages: [
+    { name: "Russian", status: "official", family: "Slavic" },
+    { name: "Tatar", status: "wide", family: "Turkic" },
+    { name: "Chechen", status: "wide", family: "Northeast Caucasian" },
+    { name: "Bashkir", status: "wide", family: "Turkic" },
+    { name: "Chuvash", status: "wide", family: "Turkic" }
+  ]},
+  "Rwanda": { languages: [
+    { name: "Kinyarwanda", status: "official", family: "Niger-Congo" },
+    { name: "French", status: "official", family: "Romance" },
+    { name: "English", status: "official", family: "Germanic" },
+    { name: "Swahili", status: "official", family: "Niger-Congo" }
+  ]},
+  "S. Sudan": { languages: [
+    { name: "English", status: "official", family: "Germanic" },
+    { name: "Dinka", status: "wide", family: "Nilo-Saharan" },
+    { name: "Nuer", status: "wide", family: "Nilo-Saharan" }
+  ]},
+  "Saudi Arabia": { languages: [
+    { name: "Arabic", status: "official", family: "Afroasiatic" },
+    { name: "English", status: "wide", family: "Germanic" }
+  ]},
+  "Senegal": { languages: [
+    { name: "French", status: "official", family: "Romance" },
+    { name: "Wolof", status: "wide", family: "Niger-Congo" },
+    { name: "Pulaar (Fula)", status: "wide", family: "Niger-Congo" },
+    { name: "Serer", status: "wide", family: "Niger-Congo" }
+  ]},
+  "Serbia": { languages: [
+    { name: "Serbian", status: "official", family: "Slavic" },
+    { name: "Hungarian", status: "wide", family: "Uralic" },
+    { name: "Bosnian", status: "wide", family: "Slavic" }
+  ]},
+  "Sierra Leone": { languages: [
+    { name: "English", status: "official", family: "Germanic" },
+    { name: "Krio", status: "wide", family: "Creole" },
+    { name: "Mende", status: "wide", family: "Niger-Congo" },
+    { name: "Temne", status: "wide", family: "Niger-Congo" }
+  ]},
+  "Slovakia": { languages: [
+    { name: "Slovak", status: "official", family: "Slavic" },
+    { name: "Hungarian", status: "wide", family: "Uralic" }
+  ]},
+  "Slovenia": { languages: [
+    { name: "Slovene", status: "official", family: "Slavic" },
+    { name: "Hungarian", status: "wide", family: "Uralic" },
+    { name: "Italian", status: "wide", family: "Romance" }
+  ]},
+  "Solomon Is.": { languages: [
+    { name: "English", status: "official", family: "Germanic" },
+    { name: "Solomon Islands Pijin", status: "wide", family: "Creole" }
+  ]},
+  "Somalia": { languages: [
+    { name: "Somali", status: "official", family: "Afroasiatic" },
+    { name: "Arabic", status: "official", family: "Afroasiatic" },
+    { name: "English", status: "wide", family: "Germanic" }
+  ]},
+  "Somaliland": { languages: [
+    { name: "Somali", status: "official", family: "Afroasiatic" },
+    { name: "Arabic", status: "wide", family: "Afroasiatic" },
+    { name: "English", status: "wide", family: "Germanic" }
+  ]},
+  "South Africa": { languages: [
+    { name: "Zulu", status: "official", family: "Niger-Congo" },
+    { name: "Xhosa", status: "official", family: "Niger-Congo" },
+    { name: "Afrikaans", status: "official", family: "Germanic" },
+    { name: "English", status: "official", family: "Germanic" },
+    { name: "Northern Sotho (Sepedi)", status: "official", family: "Niger-Congo" },
+    { name: "Tswana", status: "official", family: "Niger-Congo" },
+    { name: "Southern Sotho", status: "official", family: "Niger-Congo" },
+    { name: "Tsonga", status: "official", family: "Niger-Congo" },
+    { name: "Swati", status: "official", family: "Niger-Congo" },
+    { name: "Venda", status: "official", family: "Niger-Congo" },
+    { name: "Southern Ndebele", status: "official", family: "Niger-Congo" },
+    { name: "South African Sign Language", status: "official", family: "Sign Language" }
+  ]},
+  "South Korea": { languages: [
+    { name: "Korean", status: "official", family: "Koreanic" }
+  ]},
+  "Spain": { languages: [
+    { name: "Spanish", status: "official", family: "Romance" },
+    { name: "Catalan", status: "official", family: "Romance" },
+    { name: "Basque", status: "official", family: "Basque" },
+    { name: "Galician", status: "official", family: "Romance" },
+    { name: "Occitan (Aranese)", status: "official", family: "Romance" }
+  ]},
+  "Sri Lanka": { languages: [
+    { name: "Sinhala", status: "official", family: "Indo-Iranian" },
+    { name: "Tamil", status: "official", family: "Dravidian" },
+    { name: "English", status: "wide", family: "Germanic" }
+  ]},
+  "Sudan": { languages: [
+    { name: "Arabic", status: "official", family: "Afroasiatic" },
+    { name: "English", status: "official", family: "Germanic" },
+    { name: "Nubian", status: "wide", family: "Nilo-Saharan" },
+    { name: "Beja", status: "wide", family: "Afroasiatic" }
+  ]},
+  "Suriname": { languages: [
+    { name: "Dutch", status: "official", family: "Germanic" },
+    { name: "Sranan Tongo", status: "wide", family: "Creole" },
+    { name: "Caribbean Hindustani", status: "wide", family: "Indo-Iranian" }
+  ]},
+  "Sweden": { languages: [
+    { name: "Swedish", status: "official", family: "Germanic" },
+    { name: "Sami", status: "official", family: "Uralic" }
+  ]},
+  "Switzerland": { languages: [
+    { name: "German", status: "official", family: "Germanic" },
+    { name: "French", status: "official", family: "Romance" },
+    { name: "Italian", status: "official", family: "Romance" },
+    { name: "Romansh", status: "official", family: "Romance" }
+  ]},
+  "Syria": { languages: [
+    { name: "Arabic", status: "official", family: "Afroasiatic" },
+    { name: "Kurdish", status: "wide", family: "Indo-Iranian" },
+    { name: "Armenian", status: "wide", family: "Armenian" }
+  ]},
+  "Taiwan": { languages: [
+    { name: "Mandarin Chinese", status: "official", family: "Sino-Tibetan" },
+    { name: "Taiwanese Hokkien", status: "wide", family: "Sino-Tibetan" },
+    { name: "Hakka", status: "wide", family: "Sino-Tibetan" }
+  ]},
+  "Tajikistan": { languages: [
+    { name: "Tajik", status: "official", family: "Indo-Iranian" },
+    { name: "Russian", status: "wide", family: "Slavic" }
+  ]},
+  "Tanzania": { languages: [
+    { name: "Swahili", status: "official", family: "Niger-Congo" },
+    { name: "English", status: "official", family: "Germanic" },
+    { name: "Sukuma", status: "wide", family: "Niger-Congo" }
+  ]},
+  "Thailand": { languages: [
+    { name: "Thai", status: "official", family: "Tai-Kadai" },
+    { name: "Isan (Lao)", status: "wide", family: "Tai-Kadai" },
+    { name: "Northern Thai", status: "wide", family: "Tai-Kadai" },
+    { name: "Southern Thai", status: "wide", family: "Tai-Kadai" },
+    { name: "Malay (Yawi)", status: "wide", family: "Austronesian" }
+  ]},
+  "Timor-Leste": { languages: [
+    { name: "Tetum", status: "official", family: "Austronesian" },
+    { name: "Portuguese", status: "official", family: "Romance" },
+    { name: "Indonesian", status: "wide", family: "Austronesian" },
+    { name: "English", status: "wide", family: "Germanic" }
+  ]},
+  "Togo": { languages: [
+    { name: "French", status: "official", family: "Romance" },
+    { name: "Ewe", status: "wide", family: "Niger-Congo" },
+    { name: "Kabiye", status: "wide", family: "Niger-Congo" }
+  ]},
+  "Trinidad and Tobago": { languages: [
+    { name: "English", status: "official", family: "Germanic" },
+    { name: "Trinidadian Creole", status: "wide", family: "Creole" },
+    { name: "Caribbean Hindustani", status: "wide", family: "Indo-Iranian" }
+  ]},
+  "Tunisia": { languages: [
+    { name: "Arabic", status: "official", family: "Afroasiatic" },
+    { name: "French", status: "wide", family: "Romance" },
+    { name: "Berber", status: "wide", family: "Afroasiatic" }
+  ]},
+  "Turkey": { languages: [
+    { name: "Turkish", status: "official", family: "Turkic" },
+    { name: "Kurdish", status: "wide", family: "Indo-Iranian" },
+    { name: "Arabic", status: "wide", family: "Afroasiatic" }
+  ]},
+  "Turkmenistan": { languages: [
+    { name: "Turkmen", status: "official", family: "Turkic" },
+    { name: "Russian", status: "wide", family: "Slavic" }
+  ]},
+  "Uganda": { languages: [
+    { name: "English", status: "official", family: "Germanic" },
+    { name: "Swahili", status: "official", family: "Niger-Congo" },
+    { name: "Luganda", status: "wide", family: "Niger-Congo" },
+    { name: "Runyankore", status: "wide", family: "Niger-Congo" }
+  ]},
+  "Ukraine": { languages: [
+    { name: "Ukrainian", status: "official", family: "Slavic" },
+    { name: "Russian", status: "wide", family: "Slavic" }
+  ]},
+  "United Arab Emirates": { languages: [
+    { name: "Arabic", status: "official", family: "Afroasiatic" },
+    { name: "English", status: "wide", family: "Germanic" },
+    { name: "Hindi", status: "wide", family: "Indo-Iranian" },
+    { name: "Urdu", status: "wide", family: "Indo-Iranian" }
+  ]},
+  "United Kingdom": { languages: [
+    { name: "English", status: "official", family: "Germanic" },
+    { name: "Welsh", status: "official", family: "Celtic" },
+    { name: "Scottish Gaelic", status: "official", family: "Celtic" },
+    { name: "Irish", status: "official", family: "Celtic" },
+    { name: "Scots", status: "wide", family: "Germanic" }
+  ]},
+  "United States of America": { languages: [
+    { name: "English", status: "official", family: "Germanic" },
+    { name: "Spanish", status: "wide", family: "Romance" },
+    { name: "French", status: "wide", family: "Romance" },
+    { name: "Hawaiian", status: "wide", family: "Austronesian" }
+  ]},
+  "Uruguay": { languages: [
+    { name: "Spanish", status: "official", family: "Romance" }
+  ]},
+  "Uzbekistan": { languages: [
+    { name: "Uzbek", status: "official", family: "Turkic" },
+    { name: "Russian", status: "wide", family: "Slavic" },
+    { name: "Tajik", status: "wide", family: "Indo-Iranian" }
+  ]},
+  "Vanuatu": { languages: [
+    { name: "Bislama", status: "official", family: "Creole" },
+    { name: "English", status: "official", family: "Germanic" },
+    { name: "French", status: "official", family: "Romance" }
+  ]},
+  "Venezuela": { languages: [
+    { name: "Spanish", status: "official", family: "Romance" }
+  ]},
+  "Vietnam": { languages: [
+    { name: "Vietnamese", status: "official", family: "Austroasiatic" }
+  ]},
+  "W. Sahara": { languages: [
+    { name: "Arabic", status: "official", family: "Afroasiatic" },
+    { name: "Spanish", status: "wide", family: "Romance" },
+    { name: "Hassaniya Arabic", status: "wide", family: "Afroasiatic" }
+  ]},
+  "Yemen": { languages: [
+    { name: "Arabic", status: "official", family: "Afroasiatic" }
+  ]},
+  "Zambia": { languages: [
+    { name: "English", status: "official", family: "Germanic" },
+    { name: "Bemba", status: "wide", family: "Niger-Congo" },
+    { name: "Nyanja (Chewa)", status: "wide", family: "Niger-Congo" },
+    { name: "Tonga", status: "wide", family: "Niger-Congo" }
+  ]},
+  "Zimbabwe": { languages: [
+    { name: "English", status: "official", family: "Germanic" },
+    { name: "Shona", status: "wide", family: "Niger-Congo" },
+    { name: "Ndebele", status: "wide", family: "Niger-Congo" },
+    { name: "Chewa", status: "wide", family: "Niger-Congo" }
+  ]},
+  "eSwatini": { languages: [
+    { name: "English", status: "official", family: "Germanic" },
+    { name: "Swati (siSwati)", status: "official", family: "Niger-Congo" }
+  ]}
+};
+
+// Countries/territories without language data (show "no data"):
+// Antarctica, Fr. S. Antarctic Lands
+
+// ═══════════════════════════════════════════════════════════════
+//  FAMILY COLOR PALETTE
+// ═══════════════════════════════════════════════════════════════
+const FAMILY_COLORS = {
+  "Germanic":         "#4e79a7",
+  "Romance":          "#e15759",
+  "Slavic":           "#59a14f",
+  "Indo-Iranian":     "#f28e2b",
+  "Hellenic":         "#af7aa1",
+  "Celtic":           "#76b7b2",
+  "Baltic":           "#b07aa1",
+  "Albanian":         "#ff9da7",
+  "Armenian":         "#9c755f",
+  "Sino-Tibetan":     "#c23531",
+  "Austronesian":     "#b6992d",
+  "Niger-Congo":      "#8cd17d",
+  "Afroasiatic":      "#499894",
+  "Turkic":           "#d37295",
+  "Uralic":           "#f1ce63",
+  "Dravidian":        "#d4a6c8",
+  "Japonic":          "#e74c3c",
+  "Koreanic":         "#8e44ad",
+  "Tai-Kadai":        "#e67e22",
+  "Austroasiatic":    "#2ecc71",
+  "Mongolic":         "#7f8c8d",
+  "Kartvelian":       "#3498db",
+  "Creole":           "#f1c40f",
+  "Quechuan":         "#cd853f",
+  "Aymaran":          "#daa520",
+  "Tupian":           "#8fbc8f",
+  "Eskimo-Aleut":     "#5dade2",
+  "Nilo-Saharan":     "#aab7b8",
+  "Northeast Caucasian": "#2471a3",
+  "Basque":           "#c39bd3",
+  "Mayan":            "#82e0aa",
+  "Uto-Aztecan":      "#f1948a",
+  "Sign Language":    "#d5dbdb",
+  "Other":            "#bdc3c7"
+};
+
+// Default colors for fallback
+const FALLBACK_COLOR = "#bdc3c7";
+
+// ═══════════════════════════════════════════════════════════════
+//  MAIN APPLICATION
+// ═══════════════════════════════════════════════════════════════
+(function() {
+  const svg = d3.select("#map");
+  const tooltip = d3.select("#tooltip");
+  const infoContent = d3.select("#info-content");
+
+  let width, height;
+  let projection, path;
+  let features = [];
+  let featureById = {};
+  let selectedCountry = null;
+  let zoomBehavior;
+  let familyToggle = false;
+  let currentTransform = d3.zoomIdentity;
+
+  // ─── Resize ──────────────────────────────────────────────────
+  function resize() {
+    const container = document.getElementById("map-container");
+    width = container.clientWidth;
+    height = container.clientHeight;
+    svg.attr("width", width).attr("height", height);
+    if (projection) {
+      projection.fitSize([width, height], { type: "FeatureCollection", features: features });
+      svg.selectAll(".country").attr("d", path);
+      svg.selectAll(".ocean").attr("d", path({ type: "Sphere" }));
+    }
+  }
+
+  // ─── Load data ───────────────────────────────────────────────
+  async function init() {
+    const url = "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json";
+    let topology;
+    try {
+      topology = await d3.json(url);
+    } catch (e) {
+      infoContent.html('<p class="no-data-msg"><span class="emoji">⚠️</span>Failed to load map data. Check your internet connection and try again.</p>');
+      return;
+    }
+    const geojson = topojson.feature(topology, topology.objects.countries);
+    features = geojson.features;
+    features.forEach(f => { featureById[f.properties.name] = f; });
+
+    // Compute dominant family for each feature
+    features.forEach(f => {
+      const name = f.properties.name;
+      const data = langData[name];
+      if (data && data.languages.length > 0) {
+        // Dominant family = family of the first official language, else first language
+        const official = data.languages.find(l => l.status === "official");
+        const first = data.languages[0];
+        f.dominantFamily = (official || first).family;
+        f.hasData = true;
+      } else {
+        f.hasData = false;
+      }
+    });
+
+    // ── Projection ──────────────────────────────────────────────
+    projection = d3.geoNaturalEarth1()
+        .fitSize([width, height], geojson);
+    path = d3.geoPath().projection(projection);
+
+    // ── Zoom ────────────────────────────────────────────────────
+    zoomBehavior = d3.zoom()
+        .scaleExtent([1, 10])
+        .on("zoom", (event) => {
+          currentTransform = event.transform;
+          g.attr("transform", event.transform);
+          // Adjust stroke width inversely to zoom
+          g.selectAll(".country").style("stroke-width", Math.max(0.3, 0.6 / Math.sqrt(event.transform.k)));
+        });
+
+    svg.call(zoomBehavior);
+
+    // ── Draw ocean / globe background ────────────────────────────
+    svg.append("path")
+        .attr("d", path({ type: "Sphere" }))
+        .attr("class", "ocean")
+        .attr("stroke", "#a8c8e0")
+        .attr("stroke-width", 0.5);
+
+    // ── Draw countries ──────────────────────────────────────────
+    const g = svg.append("g").attr("class", "countries-group");
+
+    const countryPaths = g.selectAll(".country")
+        .data(features)
+      .join("path")
+        .attr("class", d => {
+          let cls = "country";
+          if (!d.hasData) cls += " no-data";
+          return cls;
+        })
+        .attr("d", path)
+        .attr("data-name", d => d.properties.name)
+        .on("mouseenter", handleMouseEnter)
+        .on("mousemove", handleMouseMove)
+        .on("mouseleave", handleMouseLeave)
+        .on("click", handleClick);
+
+    // Store reference for updates
+    g.countryPaths = countryPaths;
+
+    // ── Style: default or family-colored ────────────────────────
+    applyColoring();
+
+    // ── Reset zoom button (double-click) ────────────────────────
+    svg.on("dblclick.zoom", null); // disable default dblclick zoom
+    svg.on("dblclick", () => {
+      resetZoom();
+    });
+
+    // ── Init resize ─────────────────────────────────────────────
+    window.addEventListener("resize", resize);
+
+    // ── Populate search ─────────────────────────────────────────
+    populateSearch();
+
+    // ── Family toggle ───────────────────────────────────────────
+    d3.select("#family-toggle").on("change", function() {
+      familyToggle = this.checked;
+      applyColoring();
+      d3.select("#legend-section").style("display", familyToggle ? "block" : "none");
+    });
+
+    // ── Init info panel ─────────────────────────────────────────
+    infoContent.html('<p class="hint">🌍 Click on any country to see its languages, or search above to zoom to a country.</p>');
+
+    // ── Build legend data (hidden initially) ────────────────────
+    buildLegend();
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  COLORING
+  // ═══════════════════════════════════════════════════════════════
+  function applyColoring() {
+    const countryPaths = d3.select(".countries-group").selectAll(".country");
+    if (familyToggle) {
+      const allFamilies = new Set(features.filter(f => f.hasData).map(f => f.dominantFamily));
+      countryPaths.each(function(d) {
+        const el = d3.select(this);
+        if (d.hasData) {
+          const color = FAMILY_COLORS[d.dominantFamily] || FALLBACK_COLOR;
+          el.style("fill", color);
+        } else {
+          el.style("fill", "#e8e8e8");
+        }
+      });
+    } else {
+      countryPaths.each(function(d) {
+        const el = d3.select(this);
+        if (d.hasData) {
+          el.style("fill", null); // revert to CSS default
+        } else {
+          el.style("fill", null);
+        }
+      });
+    }
+    // Re-apply selected/hovered overrides
+    countryPaths.style("fill-opacity", 1);
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  LEGEND
+  // ═══════════════════════════════════════════════════════════════
+  function buildLegend() {
+    const families = new Set();
+    features.forEach(f => {
+      if (f.hasData && f.dominantFamily) {
+        families.add(f.dominantFamily);
+      }
+    });
+    // Sort families by prevalence (descending)
+    const counts = {};
+    features.forEach(f => {
+      if (f.hasData && f.dominantFamily) {
+        counts[f.dominantFamily] = (counts[f.dominantFamily] || 0) + 1;
+      }
+    });
+    const sorted = Array.from(families).sort((a, b) => (counts[b] || 0) - (counts[a] || 0));
+
+    const container = d3.select("#legend-items");
+    container.html("");
+    sorted.forEach(fam => {
+      const color = FAMILY_COLORS[fam] || FALLBACK_COLOR;
+      container.append("div")
+          .attr("class", "legend-item")
+          .html(`<span class="color-box" style="background:${color}"></span><span>${fam}</span>`);
+    });
+    // Add "No data" entry
+    container.append("div")
+        .attr("class", "legend-item")
+        .html(`<span class="color-box" style="background:#e8e8e8"></span><span>No data</span>`);
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  HOVER HANDLING
+  // ═══════════════════════════════════════════════════════════════
+  function handleMouseEnter(event, d) {
+    const el = d3.select(this);
+    el.classed("hovered", true);
+    const name = d.properties.name;
+    tooltip.style("display", "block").text(name);
+  }
+
+  function handleMouseMove(event, d) {
+    const [x, y] = d3.pointer(event, document.body);
+    tooltip
+        .style("left", (x + 12) + "px")
+        .style("top", (y - 28) + "px");
+  }
+
+  function handleMouseLeave(event, d) {
+    d3.select(this).classed("hovered", false);
+    tooltip.style("display", "none");
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  CLICK HANDLING — show info panel
+  // ═══════════════════════════════════════════════════════════════
+  function handleClick(event, d) {
+    const name = d.properties.name;
+    // Deselect previous
+    if (selectedCountry) {
+      d3.selectAll(".country.selected").classed("selected", false);
+    }
+    selectedCountry = name;
+    d3.select(this).classed("selected", true);
+
+    const data = langData[name];
+    if (!data || !data.languages || data.languages.length === 0) {
+      infoContent.html(`
+        <div class="no-data-msg">
+          <span class="emoji">📭</span>
+          No language data available for <strong>${name}</strong>.
+        </div>
+      `);
+      return;
+    }
+
+    // Determine dominant family for badge
+    const official = data.languages.find(l => l.status === "official");
+    const first = data.languages[0];
+    const domFamily = (official || first).family;
+    const domColor = FAMILY_COLORS[domFamily] || FALLBACK_COLOR;
+
+    let html = `<div class="country-name">${name}</div>`;
+    html += `<span class="family-badge" style="background:${domColor}">${domFamily}</span>`;
+    html += `<ul class="lang-list">`;
+
+    data.languages.forEach(lang => {
+      const statusLabel = (lang.status === "official" || lang.status === "national")
+          ? '<span class="lang-status status-official">Official</span>'
+          : '<span class="lang-status status-wide">Widely Spoken</span>';
+      const famColor = FAMILY_COLORS[lang.family] || FALLBACK_COLOR;
+      html += `<li class="lang-item">
+        <span class="lang-name">${lang.name}</span>
+        ${statusLabel}
+        <span class="lang-family" style="color:${famColor}">${lang.family}</span>
+      </li>`;
+    });
+
+    html += `</ul>`;
+    infoContent.html(html);
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  SEARCH
+  // ═══════════════════════════════════════════════════════════════
+  function populateSearch() {
+    const input = document.getElementById("search-input");
+    const results = document.getElementById("search-results");
+
+    input.addEventListener("input", function() {
+      const query = this.value.toLowerCase().trim();
+      if (!query) {
+        results.style.display = "none";
+        return;
+      }
+      const matches = features.filter(f => {
+        return f.properties.name.toLowerCase().includes(query);
+      }).slice(0, 20);
+
+      if (matches.length === 0) {
+        results.style.display = "block";
+        results.innerHTML = '<div class="sr-item" style="color:#999;cursor:default;">No matches found</div>';
+        return;
+      }
+
+      results.style.display = "block";
+      results.innerHTML = "";
+      matches.forEach((f, i) => {
+        const item = document.createElement("div");
+        item.className = "sr-item";
+        const hasData = langData[f.properties.name] ? "has-data" : "no-data";
+        const suffix = langData[f.properties.name] ? "" : " (no data)";
+        item.innerHTML = `<span class="${hasData}">${f.properties.name}${suffix}</span>`;
+        item.addEventListener("click", () => {
+          zoomToCountry(f.properties.name);
+          results.style.display = "none";
+          input.value = f.properties.name;
+          // Trigger click
+          const sel = d3.select(`.country[data-name="${f.properties.name}"]`);
+          if (!sel.empty()) {
+            sel.dispatch("click");
+          }
+        });
+        results.appendChild(item);
+      });
+    });
+
+    input.addEventListener("blur", () => {
+      setTimeout(() => { results.style.display = "none"; }, 200);
+    });
+
+    input.addEventListener("focus", () => {
+      if (input.value.trim()) {
+        results.style.display = "block";
+      }
+    });
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  ZOOM TO COUNTRY
+  // ═══════════════════════════════════════════════════════════════
+  function zoomToCountry(name) {
+    const feature = featureById[name];
+    if (!feature) return;
+
+    const bounds = path.bounds(feature);
+    const dx = bounds[1][0] - bounds[0][0];
+    const dy = bounds[1][1] - bounds[0][1];
+    const cx = (bounds[0][0] + bounds[1][0]) / 2;
+    const cy = (bounds[0][1] + bounds[1][1]) / 2;
+
+    const padding = 40;
+    const scale = Math.max(1, Math.min(10, 0.95 / Math.max(dx / width, dy / height)));
+    const scaledWidth = width / scale;
+    const scaledHeight = height / scale;
+
+    const tx = width / 2 - cx * scale;
+    const ty = height / 2 - cy * scale;
+
+    const transform = d3.zoomIdentity.translate(tx, ty).scale(scale);
+
+    svg.transition().duration(750).call(zoomBehavior.transform, transform);
+  }
+
+  function resetZoom() {
+    svg.transition().duration(750).call(zoomBehavior.transform, d3.zoomIdentity);
+    // Deselect
+    d3.selectAll(".country.selected").classed("selected", false);
+    selectedCountry = null;
+    infoContent.html('<p class="hint">🌍 Click on any country to see its languages, or search above to zoom to a country.</p>');
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  START
+  // ═══════════════════════════════════════════════════════════════
+  resize();
+  init();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,1022 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crypto Price Tracker — BTC & XMR</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            padding: 20px;
+        }
+
+        .container {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 30px;
+            max-width: 960px;
+            width: 100%;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        .title {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .coin-icons {
+            display: flex;
+            gap: 6px;
+        }
+
+        .coin-icon {
+            width: 34px;
+            height: 34px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            color: white;
+            font-size: 18px;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .coin-icon.btc {
+            background: linear-gradient(135deg, #f7931a, #ff9500);
+        }
+
+        .coin-icon.xmr {
+            background: linear-gradient(135deg, #ff6600, #e85d04);
+        }
+
+        h1 {
+            color: #ffffff;
+            font-size: 1.5rem;
+            font-weight: 600;
+        }
+
+        /* ── View Toggle ── */
+        .view-toggle-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .view-toggle-label {
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 0.85rem;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .view-toggle {
+            display: flex;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 30px;
+            padding: 4px;
+            gap: 4px;
+            position: relative;
+        }
+
+        .view-btn {
+            padding: 8px 18px;
+            border: none;
+            border-radius: 26px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            background: transparent;
+            color: rgba(255, 255, 255, 0.5);
+            position: relative;
+            z-index: 1;
+            white-space: nowrap;
+        }
+
+        .view-btn:hover {
+            color: rgba(255, 255, 255, 0.8);
+        }
+
+        .view-btn.active-btc {
+            color: #ffffff;
+            background: linear-gradient(135deg, #f7931a, #ff9500);
+            box-shadow: 0 2px 10px rgba(247, 147, 26, 0.4);
+        }
+
+        .view-btn.active-xmr {
+            color: #ffffff;
+            background: linear-gradient(135deg, #ff6600, #e85d04);
+            box-shadow: 0 2px 10px rgba(255, 102, 0, 0.4);
+        }
+
+        .view-btn.active-compare {
+            color: #ffffff;
+            background: linear-gradient(135deg, #f7931a, #ff6600);
+            box-shadow: 0 2px 10px rgba(255, 140, 0, 0.4);
+        }
+
+        /* ── Price Cards ── */
+        .price-cards {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .price-card {
+            flex: 1;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 15px;
+            padding: 18px 20px;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            transition: all 0.4s ease;
+            opacity: 0;
+            transform: translateY(10px);
+            max-width: 48%;
+        }
+
+        .price-card.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .price-card.btc-card {
+            border-left: 3px solid #f7931a;
+        }
+
+        .price-card.xmr-card {
+            border-left: 3px solid #ff6600;
+        }
+
+        .price-card-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+
+        .price-card-icon {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            color: white;
+            font-size: 14px;
+        }
+
+        .price-card-name {
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 0.9rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .price-card-price {
+            font-size: 1.6rem;
+            font-weight: 700;
+            color: #ffffff;
+            margin-bottom: 6px;
+            transition: color 0.3s ease;
+        }
+
+        .price-card-change {
+            font-size: 0.9rem;
+            font-weight: 600;
+            padding: 4px 10px;
+            border-radius: 15px;
+            display: inline-block;
+            transition: all 0.3s ease;
+        }
+
+        .price-card-change.positive {
+            background: rgba(0, 180, 83, 0.2);
+            color: #00b453;
+        }
+
+        .price-card-change.negative {
+            background: rgba(255, 75, 75, 0.2);
+            color: #ff4b4b;
+        }
+
+        /* ── Comparison Stats Row ── */
+        .comparison-stats {
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 15px;
+            padding: 18px 24px;
+            margin-bottom: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 15px;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            opacity: 0;
+            transform: translateY(10px);
+            max-height: 0;
+            padding: 0 24px;
+            margin: 0;
+            overflow: hidden;
+        }
+
+        .comparison-stats.visible {
+            opacity: 1;
+            transform: translateY(0);
+            max-height: 200px;
+            padding: 18px 24px;
+            margin-bottom: 20px;
+        }
+
+        .stat-item {
+            text-align: center;
+            min-width: 120px;
+        }
+
+        .stat-label {
+            color: rgba(255, 255, 255, 0.5);
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 6px;
+        }
+
+        .stat-value {
+            font-size: 1.1rem;
+            font-weight: 700;
+        }
+
+        .stat-value.btc-color { color: #f7931a; }
+        .stat-value.xmr-color { color: #ff6600; }
+        .stat-value.positive { color: #00b453; }
+        .stat-value.negative { color: #ff4b4b; }
+
+        .stat-divider {
+            width: 1px;
+            height: 40px;
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        /* ── Chart Area ── */
+        .chart-container {
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .time-range-buttons {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .time-btn {
+            padding: 10px 25px;
+            border: none;
+            border-radius: 25px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            background: rgba(255, 255, 255, 0.1);
+            color: #ffffff;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .time-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+            transform: translateY(-2px);
+        }
+
+        .time-btn.active {
+            background: linear-gradient(135deg, #f7931a, #ff9500);
+            box-shadow: 0 4px 15px rgba(247, 147, 26, 0.4);
+        }
+
+        .time-btn::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 0;
+            height: 0;
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            transition: width 0.4s ease, height 0.4s ease;
+        }
+
+        .time-btn:active::after {
+            width: 200px;
+            height: 200px;
+            opacity: 0;
+        }
+
+        .chart-wrapper {
+            position: relative;
+            height: 420px;
+        }
+
+        .loading-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            border-radius: 15px;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s ease;
+            z-index: 10;
+        }
+
+        .loading-overlay.visible {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid rgba(255, 255, 255, 0.1);
+            border-top-color: #f7931a;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .refresh-indicator {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 0.85rem;
+        }
+
+        .pulse {
+            width: 8px;
+            height: 8px;
+            background: #00b453;
+            border-radius: 50%;
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(1.2); }
+        }
+
+        .last-updated {
+            margin-top: 15px;
+            text-align: center;
+            color: rgba(255, 255, 255, 0.5);
+            font-size: 0.85rem;
+        }
+
+        /* ── Comparison Chart Legend ── */
+        .chart-custom-legend {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-bottom: 15px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            padding: 6px 12px;
+            border-radius: 20px;
+            background: rgba(255, 255, 255, 0.05);
+            transition: all 0.3s ease;
+        }
+
+        .legend-item:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .legend-item.hidden {
+            opacity: 0.4;
+        }
+
+        .legend-color {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+
+        .legend-label {
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+
+        @media (max-width: 600px) {
+            .container {
+                padding: 15px;
+            }
+
+            h1 {
+                font-size: 1.2rem;
+            }
+
+            .price-card-price {
+                font-size: 1.3rem;
+            }
+
+            .view-btn {
+                padding: 6px 12px;
+                font-size: 0.75rem;
+            }
+
+            .chart-wrapper {
+                height: 320px;
+            }
+
+            .comparison-stats.visible {
+                flex-direction: column;
+            }
+
+            .stat-divider {
+                width: 100%;
+                height: 1px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header with title and view toggle -->
+        <div class="header">
+            <div class="title">
+                <div class="coin-icons">
+                    <div class="coin-icon btc">₿</div>
+                    <div class="coin-icon xmr">ɱ</div>
+                </div>
+                <h1>Crypto Tracker</h1>
+            </div>
+            <div class="view-toggle-wrapper">
+                <span class="view-toggle-label">View</span>
+                <div class="view-toggle">
+                    <button class="view-btn active-btc" data-view="btc">BTC</button>
+                    <button class="view-btn" data-view="xmr">XMR</button>
+                    <button class="view-btn" data-view="compare">Compare</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Price Cards -->
+        <div class="price-cards">
+            <div class="price-card btc-card visible" id="btcCard">
+                <div class="price-card-header">
+                    <div class="price-card-icon btc">₿</div>
+                    <span class="price-card-name">Bitcoin</span>
+                </div>
+                <div class="price-card-price" id="btcPrice">Loading...</div>
+                <div class="price-card-change positive" id="btcChange">--</div>
+            </div>
+            <div class="price-card xmr-card visible" id="xmrCard">
+                <div class="price-card-header">
+                    <div class="price-card-icon xmr">ɱ</div>
+                    <span class="price-card-name">Monero</span>
+                </div>
+                <div class="price-card-price" id="xmrPrice">Loading...</div>
+                <div class="price-card-change positive" id="xmrChange">--</div>
+            </div>
+        </div>
+
+        <!-- Comparison Stats (visible only in compare mode) -->
+        <div class="comparison-stats" id="comparisonStats">
+            <div class="stat-item">
+                <div class="stat-label">BTC 7D Change</div>
+                <div class="stat-value btc-color" id="btc7d">--</div>
+            </div>
+            <div class="stat-divider"></div>
+            <div class="stat-item">
+                <div class="stat-label">XMR 7D Change</div>
+                <div class="stat-value xmr-color" id="xmr7d">--</div>
+            </div>
+            <div class="stat-divider"></div>
+            <div class="stat-item">
+                <div class="stat-label">7D Outperformer</div>
+                <div class="stat-value" id="outperformer">--</div>
+            </div>
+            <div class="stat-divider"></div>
+            <div class="stat-item">
+                <div class="stat-label">BTC/XMR Ratio</div>
+                <div class="stat-value" id="btcXmrRatio" style="color: #a78bfa;">--</div>
+            </div>
+        </div>
+
+        <!-- Chart -->
+        <div class="chart-container">
+            <div class="time-range-buttons">
+                <button class="time-btn active" data-range="1h">1H</button>
+                <button class="time-btn" data-range="24h">24H</button>
+                <button class="time-btn" data-range="7d">7D</button>
+                <button class="time-btn" data-range="30d">30D</button>
+            </div>
+            <div class="chart-wrapper">
+                <canvas id="cryptoChart"></canvas>
+                <div class="loading-overlay" id="loadingOverlay">
+                    <div class="spinner"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="refresh-indicator">
+            <div class="pulse"></div>
+            <span>Auto-refreshing every 10 seconds</span>
+        </div>
+
+        <div class="last-updated" id="lastUpdated">Last updated: --</div>
+    </div>
+
+    <script>
+        // ── Constants ──
+        const REFRESH_INTERVAL = 10000; // 10 seconds
+        const COINGECKO_API = 'https://api.coingecko.com/api/v3';
+        const BINANCE_API = 'https://api.binance.com/api/v3';
+
+        const COLORS = {
+            btc: { line: '#f7931a', gradient: 'rgba(247, 147, 26, 0.25)' },
+            xmr: { line: '#ff6600', gradient: 'rgba(255, 102, 0, 0.25)' },
+            positive: '#00b453',
+            negative: '#ff4b4b'
+        };
+
+        // ── State ──
+        let chart = null;
+        let currentRange = '1h';
+        let currentView = 'btc'; // 'btc' | 'xmr' | 'compare'
+        let refreshTimer = null;
+        let last7dData = { btc: null, xmr: null };
+
+        // ── DOM refs ──
+        const btcPriceEl = document.getElementById('btcPrice');
+        const btcChangeEl = document.getElementById('btcChange');
+        const xmrPriceEl = document.getElementById('xmrPrice');
+        const xmrChangeEl = document.getElementById('xmrChange');
+        const btcCard = document.getElementById('btcCard');
+        const xmrCard = document.getElementById('xmrCard');
+        const comparisonStatsEl = document.getElementById('comparisonStats');
+        const lastUpdatedEl = document.getElementById('lastUpdated');
+        const loadingOverlay = document.getElementById('loadingOverlay');
+        const timeButtons = document.querySelectorAll('.time-btn');
+        const viewButtons = document.querySelectorAll('.view-btn');
+
+        // ── Formatting helpers ──
+        function formatCurrency(num) {
+            if (num >= 1000) {
+                return new Intl.NumberFormat('en-US', {
+                    style: 'currency', currency: 'USD',
+                    minimumFractionDigits: 2, maximumFractionDigits: 2
+                }).format(num);
+            }
+            if (num >= 1) {
+                return new Intl.NumberFormat('en-US', {
+                    style: 'currency', currency: 'USD',
+                    minimumFractionDigits: 2, maximumFractionDigits: 4
+                }).format(num);
+            }
+            return new Intl.NumberFormat('en-US', {
+                style: 'currency', currency: 'USD',
+                minimumFractionDigits: 4, maximumFractionDigits: 6
+            }).format(num);
+        }
+
+        function formatPercent(num) {
+            return `${num >= 0 ? '+' : ''}${num.toFixed(2)}%`;
+        }
+
+        function updateCardDisplay(priceEl, changeEl, price, changePct) {
+            priceEl.textContent = formatCurrency(price);
+            changeEl.textContent = formatPercent(changePct);
+            changeEl.className = `price-card-change ${changePct >= 0 ? 'positive' : 'negative'}`;
+        }
+
+        function updateLastUpdated() {
+            lastUpdatedEl.textContent = `Last updated: ${new Date().toLocaleTimeString()}`;
+        }
+
+        function setLoading(show) {
+            loadingOverlay.classList.toggle('visible', show);
+        }
+
+        // ── Fetch: 24h prices (CoinGecko, no key) ──
+        async function fetch24hPrices() {
+            try {
+                const res = await fetch(
+                    `${COINGECKO_API}/simple/price?ids=bitcoin,monero&vs_currencies=usd&include_24hr_change=true`
+                );
+                if (!res.ok) throw new Error('CoinGecko failed');
+                const d = await res.json();
+                return {
+                    btc: { price: d.bitcoin.usd, change: d.bitcoin.usd_24h_change },
+                    xmr: { price: d.monero.usd, change: d.monero.usd_24h_change }
+                };
+            } catch (e) {
+                console.error('CoinGecko error, trying Binance...', e);
+                const [btcRes, xmrRes] = await Promise.all([
+                    fetch(`${BINANCE_API}/ticker/24hr?symbol=BTCUSDT`),
+                    fetch(`${BINANCE_API}/ticker/24hr?symbol=XMRUSDT`)
+                ]);
+                const btc = await btcRes.json();
+                const xmr = await xmrRes.json();
+                return {
+                    btc: { price: parseFloat(btc.lastPrice), change: parseFloat(btc.priceChangePercent) },
+                    xmr: { price: parseFloat(xmr.lastPrice), change: parseFloat(xmr.priceChangePercent) }
+                };
+            }
+        }
+
+        // ── Fetch: historical klines (Binance, no key) ──
+        function klineConfig(range) {
+            switch (range) {
+                case '1h':  return { interval: '1m',  limit: 60 };
+                case '24h': return { interval: '5m',  limit: 288 };
+                case '7d':  return { interval: '1h',  limit: 168 };
+                case '30d': return { interval: '4h',  limit: 180 };
+            }
+        }
+
+        async function fetchKlines(symbol) {
+            const cfg = klineConfig(currentRange);
+            try {
+                const res = await fetch(
+                    `${BINANCE_API}/klines?symbol=${symbol}&interval=${cfg.interval}&limit=${cfg.limit}`
+                );
+                const data = await res.json();
+                return data.map(k => ({
+                    ts: k[0],
+                    price: parseFloat(k[4])
+                }));
+            } catch (e) {
+                console.error(`Kline fetch failed for ${symbol}:`, e);
+                return [];
+            }
+        }
+
+        // ── Normalize data to percentage change ──
+        function toPercentSeries(raw) {
+            if (!raw.length) return [];
+            const first = raw[0].price;
+            return raw.map(d => ({
+                ts: d.ts,
+                pct: ((d.price - first) / first) * 100
+            }));
+        }
+
+        // ── Update view toggle UI ──
+        function applyView(view) {
+            currentView = view;
+
+            // Toggle button active states
+            viewButtons.forEach(b => {
+                b.className = 'view-btn';
+            });
+            const activeBtn = document.querySelector(`.view-btn[data-view="${view}"]`);
+            activeBtn.classList.add(`active-${view}`);
+
+            // Show / hide price cards
+            if (view === 'btc') {
+                btcCard.classList.add('visible');
+                xmrCard.style.display = 'none';
+            } else if (view === 'xmr') {
+                btcCard.style.display = 'none';
+                xmrCard.classList.add('visible');
+            } else {
+                btcCard.classList.add('visible');
+                xmrCard.classList.add('visible');
+            }
+
+            // Comparison stats visibility
+            if (view === 'compare') {
+                comparisonStatsEl.classList.add('visible');
+                updateComparisonStats();
+            } else {
+                comparisonStatsEl.classList.remove('visible');
+            }
+        }
+
+        // ── Update comparison stats row ──
+        function updateComparisonStats() {
+            const b = last7dData.btc;
+            const x = last7dData.xmr;
+
+            const btc7dEl = document.getElementById('btc7d');
+            const xmr7dEl = document.getElementById('xmr7d');
+            const outEl = document.getElementById('outperformer');
+            const ratioEl = document.getElementById('btcXmrRatio');
+
+            if (b != null) {
+                btc7dEl.textContent = formatPercent(b);
+                btc7dEl.className = `stat-value ${b >= 0 ? 'positive' : 'negative'} btc-color`;
+            }
+            if (x != null) {
+                xmr7dEl.textContent = formatPercent(x);
+                xmr7dEl.className = `stat-value ${x >= 0 ? 'positive' : 'negative'} xmr-color`;
+            }
+
+            if (b != null && x != null) {
+                if (b > x) {
+                    outEl.textContent = 'Bitcoin ▲';
+                    outEl.className = 'stat-value positive';
+                } else if (x > b) {
+                    outEl.textContent = 'Monero ▲';
+                    outEl.className = 'stat-value positive';
+                } else {
+                    outEl.textContent = 'Tied';
+                    outEl.className = 'stat-value';
+                }
+            }
+
+            if (last7dData.btc != null && last7dData.xmr != null) {
+                const ratio = (b - x);
+                ratioEl.textContent = `${ratio >= 0 ? '+' : ''}${ratio.toFixed(2)} pp`;
+                ratioEl.style.color = ratio >= 0 ? '#00b453' : '#ff4b4b';
+            }
+        }
+
+        // ── Create / update chart ──
+        function createChart() {
+            const ctx = document.getElementById('cryptoChart').getContext('2d');
+            if (chart) chart.destroy();
+
+            // Fetch all needed data
+            Promise.all([
+                fetchKlines('BTCUSDT'),
+                fetchKlines('XMRUSDT')
+            ]).then(([btcKlines, xmrKlines]) => {
+                if (btcKlines.length === 0 && xmrKlines.length === 0) {
+                    setLoading(false);
+                    return;
+                }
+
+                // Compute labels
+                const allTs = [...new Set([...btcKlines.map(d=>d.ts), ...xmrKlines.map(d=>d.ts)])].sort((a,b)=>a-b);
+                const labels = allTs.map(t => new Date(t));
+
+                let datasets = [];
+
+                if (currentView === 'compare') {
+                    // Comparison: normalize to % change
+                    const btcPct = toPercentSeries(btcKlines);
+                    const xmrPct = toPercentSeries(xmrKlines);
+
+                    datasets = [
+                        {
+                            label: 'BTC (% change)',
+                            data: btcPct.map(d => d.pct),
+                            borderColor: COLORS.btc.line,
+                            backgroundColor: COLORS.btc.gradient,
+                            borderWidth: 2,
+                            fill: true,
+                            tension: 0.4,
+                            pointRadius: 0,
+                            pointHoverRadius: 6,
+                            pointHoverBackgroundColor: COLORS.btc.line,
+                            pointHoverBorderColor: '#fff',
+                            pointHoverBorderWidth: 2
+                        },
+                        {
+                            label: 'XMR (% change)',
+                            data: xmrPct.map(d => d.pct),
+                            borderColor: COLORS.xmr.line,
+                            backgroundColor: COLORS.xmr.gradient,
+                            borderWidth: 2,
+                            fill: true,
+                            tension: 0.4,
+                            pointRadius: 0,
+                            pointHoverRadius: 6,
+                            pointHoverBackgroundColor: COLORS.xmr.line,
+                            pointHoverBorderColor: '#fff',
+                            pointHoverBorderWidth: 2
+                        }
+                    ];
+                } else {
+                    // Single coin: raw price
+                    const klines = currentView === 'btc' ? btcKlines : xmrKlines;
+                    const color = currentView === 'btc' ? COLORS.btc.line : COLORS.xmr.line;
+                    const gradient = currentView === 'btc' ? COLORS.btc.gradient : COLORS.xmr.gradient;
+                    const name = currentView === 'btc' ? 'BTC/USD' : 'XMR/USD';
+
+                    datasets = [{
+                        label: name,
+                        data: klines.map(d => d.price),
+                        borderColor: color,
+                        backgroundColor: gradient,
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.4,
+                        pointRadius: 0,
+                        pointHoverRadius: 6,
+                        pointHoverBackgroundColor: color,
+                        pointHoverBorderColor: '#fff',
+                        pointHoverBorderWidth: 2
+                    }];
+                }
+
+                chart = new Chart(ctx, {
+                    type: 'line',
+                    data: { labels, datasets },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        animation: {
+                            duration: 800,
+                            easing: 'easeOutQuart'
+                        },
+                        interaction: { intersect: false, mode: 'index' },
+                        plugins: {
+                            legend: {
+                                display: currentView === 'compare',
+                                position: 'top',
+                                labels: {
+                                    color: 'rgba(255,255,255,0.7)',
+                                    font: { size: 12, weight: '600' },
+                                    usePointStyle: true,
+                                    pointStyle: 'circle',
+                                    padding: 20
+                                }
+                            },
+                            tooltip: {
+                                backgroundColor: 'rgba(0,0,0,0.9)',
+                                titleColor: '#fff',
+                                bodyColor: '#fff',
+                                borderColor: 'rgba(255,140,0,0.5)',
+                                borderWidth: 1,
+                                cornerRadius: 10,
+                                padding: 12,
+                                titleFont: { size: 12 },
+                                bodyFont: { size: 14, weight: 'bold' },
+                                callbacks: {
+                                    title(items) {
+                                        if (!items.length) return '';
+                                        return new Date(items[0].label).toLocaleString();
+                                    },
+                                    label(ctx) {
+                                        if (currentView === 'compare') {
+                                            return `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(2)}%`;
+                                        }
+                                        return `${ctx.dataset.label}: ${formatCurrency(ctx.parsed.y)}`;
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            x: {
+                                type: 'time',
+                                time: {
+                                    displayFormats: { minute: 'HH:mm', hour: 'HH:mm', day: 'MMM dd' }
+                                },
+                                grid: { color: 'rgba(255,255,255,0.05)', drawBorder: false },
+                                ticks: { color: 'rgba(255,255,255,0.5)', maxTicksLimit: 8 }
+                            },
+                            y: {
+                                position: 'right',
+                                grid: { color: 'rgba(255,255,255,0.05)', drawBorder: false },
+                                ticks: {
+                                    color: 'rgba(255,255,255,0.5)',
+                                    callback(val) {
+                                        if (currentView === 'compare') {
+                                            return `${val.toFixed(1)}%`;
+                                        }
+                                        return '$' + val.toLocaleString(undefined, { maximumFractionDigits: 2 });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+
+                // Store 7D data for comparison stats
+                if (btcKlines.length) last7dData.btc = toPercentSeries(btcKlines).slice(-1)[0].pct;
+                if (xmrKlines.length) last7dData.xmr = toPercentSeries(xmrKlines).slice(-1)[0].pct;
+                if (currentView === 'compare') updateComparisonStats();
+
+                setLoading(false);
+            }).catch(err => {
+                console.error('Chart data error:', err);
+                setLoading(false);
+            });
+        }
+
+        // ── Update both price cards ──
+        async function updatePrices() {
+            try {
+                const prices = await fetch24hPrices();
+                updateCardDisplay(btcPriceEl, btcChangeEl, prices.btc.price, prices.btc.change);
+                updateCardDisplay(xmrPriceEl, xmrChangeEl, prices.xmr.price, prices.xmr.change);
+                updateLastUpdated();
+            } catch (e) {
+                console.error('Price update error:', e);
+            }
+        }
+
+        // ── Initial load ──
+        async function init() {
+            // Set initial view
+            applyView('btc');
+
+            // Load prices
+            await updatePrices();
+
+            // Load chart
+            setLoading(true);
+            createChart();
+
+            // Start auto-refresh
+            refreshTimer = setInterval(async () => {
+                await updatePrices();
+                // Also refresh chart data for comparison mode (7d stats)
+                if (currentView === 'compare') {
+                    createChart();
+                }
+            }, REFRESH_INTERVAL);
+        }
+
+        // ── Event listeners ──
+
+        // Time range buttons
+        timeButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const range = btn.dataset.range;
+                if (range === currentRange) return;
+                timeButtons.forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                currentRange = range;
+                setLoading(true);
+                createChart();
+            });
+        });
+
+        // View toggle buttons
+        viewButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const view = btn.dataset.view;
+                applyView(view);
+                setLoading(true);
+                createChart();
+            });
+        });
+
+        // Tab visibility: pause / resume
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                clearInterval(refreshTimer);
+            } else {
+                updatePrices();
+                createChart();
+                refreshTimer = setInterval(updatePrices, REFRESH_INTERVAL);
+            }
+        });
+
+        // ── Boot ──
+        init();
+    </script>
+</body>
+</html>

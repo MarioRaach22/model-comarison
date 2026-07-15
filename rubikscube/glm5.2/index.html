@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rubik's Cube · 3D</title>
+<style>
+  :root{
+    --c-U:#f7f7f7;  /* white  -Y */
+    --c-D:#ffd400;  /* yellow +Y */
+    --c-F:#19c855;  /* green  +Z */
+    --c-B:#2a6df4;  /* blue   -Z */
+    --c-R:#e53935;  /* red    +X */
+    --c-L:#ff8a00;  /* orange -X */
+    --body:#0b0b0e; /* black plastic */
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    color:#fff;
+    background:
+      radial-gradient(circle at 28% 18%, #3b3f6e 0%, #1a1c2e 42%, #08090f 100%);
+    min-height:100vh;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:22px; overflow:hidden; user-select:none; -webkit-user-select:none;
+  }
+
+  h1{
+    margin:0;
+    font-size:clamp(22px,3.4vw,34px); font-weight:800; letter-spacing:.4px;
+    background:linear-gradient(92deg,#ff8a00,#e53935,#ffd400,#19c855,#2a6df4);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    filter:drop-shadow(0 2px 14px rgba(255,255,255,.06));
+  }
+  .sub{font-size:13px; color:#9aa0c0; margin-top:-10px}
+
+  .stage{
+    position:relative; width:380px; height:380px;
+    perspective:1300px; perspective-origin:50% 42%;
+    display:grid; place-items:center; touch-action:none;
+    cursor:grab;
+  }
+  .stage:active{cursor:grabbing}
+
+  .ground{
+    position:absolute; left:50%; bottom:30px; transform:translateX(-50%);
+    width:230px; height:36px; border-radius:50%;
+    background:radial-gradient(ellipse at center, rgba(0,0,0,.62), rgba(0,0,0,0) 70%);
+    filter:blur(7px); pointer-events:none;
+  }
+
+  /* The cube container is a 0×0 point at the stage center.
+     Its children (cubies + rotor) live in its 3D space. */
+  .cube, .rotor{
+    position:absolute; top:50%; left:50%;
+    width:0; height:0; margin:0;
+    transform-style:preserve-3d;
+    transform:rotateX(-30deg) rotateY(-34deg);
+    will-change:transform;
+  }
+  .rotor{ transform:none; } /* animated per move */
+
+  .cubie{
+    position:absolute;
+    width:60px; height:60px;
+    transform-style:preserve-3d;
+    will-change:transform;
+    /* default transform-origin (50% 50% 0) == the cubie's 3D center,
+       so matrix3d() rotates the stickers in place about the center. */
+  }
+
+  .face{
+    position:absolute; width:60px; height:60px;
+    background:var(--body);
+    backface-visibility:hidden;
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.03);
+  }
+  .f-rx{ transform:rotateY(90deg)  translateZ(30px) } /* +X right */
+  .f-lx{ transform:rotateY(-90deg) translateZ(30px) } /* -X left  */
+  .f-dy{ transform:rotateX(-90deg) translateZ(30px) } /* +Y down  */
+  .f-uy{ transform:rotateX(90deg)  translateZ(30px) } /* -Y up    */
+  .f-fz{ transform:translateZ(30px) }                /* +Z front */
+  .f-bz{ transform:rotateY(180deg) translateZ(30px) }/* -Z back  */
+
+  .sticker{
+    position:absolute; inset:5px; border-radius:10px;
+    box-shadow:
+      inset 0 0 0 1px rgba(0,0,0,.28),
+      inset 0 3px 6px rgba(255,255,255,.30),
+      inset 0 -5px 9px rgba(0,0,0,.38);
+  }
+
+  /* Controls */
+  .controls{
+    display:flex; flex-direction:column; align-items:center; gap:14px;
+  }
+  .buttons{ display:flex; gap:14px; flex-wrap:wrap; justify-content:center }
+  .btn{
+    --g1:#fff5; --g2:#fff0; --g3:#0003;
+    appearance:none; border:none; cursor:pointer;
+    padding:13px 26px; border-radius:14px;
+    font-size:15px; font-weight:700; letter-spacing:.4px;
+    color:#fff; position:relative; overflow:hidden;
+    transform:translateY(0); transition:transform .12s ease, filter .12s ease, box-shadow .12s ease;
+    box-shadow:0 6px 16px rgba(0,0,0,.42), inset 0 1px 0 rgba(255,255,255,.35), inset 0 -3px 6px rgba(0,0,0,.35);
+  }
+  .btn::after{
+    content:""; position:absolute; inset:0; border-radius:14px;
+    background:linear-gradient(160deg, var(--g1), var(--g2) 38%, var(--g3) 100%);
+    pointer-events:none;
+  }
+  .btn:active{ transform:translateY(2px); filter:brightness(.96) }
+  .btn:disabled{ cursor:not-allowed; filter:grayscale(.5) brightness(.7); opacity:.6 }
+  .btn-scramble{ background:linear-gradient(135deg,#ff8a00,#e53935) }
+  .btn-solve{    background:linear-gradient(135deg,#19c855,#0c8a3a) }
+  .btn-reset{    background:linear-gradient(135deg,#5b6178,#2d3142) }
+
+  .row{ display:flex; align-items:center; gap:10px; font-size:13px; color:#9aa0c0 }
+  input[type=range]{
+    -webkit-appearance:none; appearance:none; width:170px; height:6px;
+    background:linear-gradient(90deg,#2a6df4,#19c855,#ffd400,#ff8a00,#e53935);
+    border-radius:6px; outline:none;
+  }
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none; width:18px; height:18px; border-radius:50%;
+    background:#fff; border:2px solid #1a1c2e; cursor:pointer;
+    box-shadow:0 2px 6px rgba(0,0,0,.5);
+  }
+  input[type=range]::-moz-range-thumb{
+    width:18px; height:18px; border-radius:50%; background:#fff;
+    border:2px solid #1a1c2e; cursor:pointer; box-shadow:0 2px 6px rgba(0,0,0,.5);
+  }
+
+  .status{
+    min-height:20px; font-size:14px; font-weight:600;
+    color:#cdd2ee; letter-spacing:.3px;
+  }
+  .status.solved{ color:#19c855 }
+  .status.busy{ color:#ffcf6b }
+
+  .legend{
+    display:grid; grid-template-columns:repeat(3,auto); gap:6px 16px;
+    font-size:11px; color:#9aa0c0;
+  }
+  .legend span{ display:flex; align-items:center; gap:6px }
+  .dot{ width:12px; height:12px; border-radius:4px;
+        box-shadow:inset 0 1px 2px rgba(255,255,255,.4), inset 0 -1px 2px rgba(0,0,0,.4) }
+</style>
+</head>
+<body>
+  <h1>Rubik's Cube</h1>
+  <div class="sub">drag to orbit · choose a speed, then Scramble &amp; Solve</div>
+
+  <div class="stage" id="stage">
+    <div class="ground"></div>
+    <div class="cube" id="cube">
+      <div class="rotor" id="rotor"></div>
+      <!-- cubies injected here -->
+    </div>
+  </div>
+
+  <div class="controls">
+    <div class="buttons">
+      <button class="btn btn-scramble" id="scramble">Scramble</button>
+      <button class="btn btn-solve"    id="solve">Solve</button>
+      <button class="btn btn-reset"    id="reset">Reset</button>
+    </div>
+    <div class="row">
+      <span>slow</span>
+      <input type="range" id="speed" min="80" max="520" value="300" step="10">
+      <span>fast</span>
+    </div>
+    <div class="status" id="status">Solved</div>
+    <div class="legend">
+      <span><i class="dot" style="background:var(--c-U)"></i>Up</span>
+      <span><i class="dot" style="background:var(--c-D)"></i>Down</span>
+      <span><i class="dot" style="background:var(--c-F)"></i>Front</span>
+      <span><i class="dot" style="background:var(--c-B)"></i>Back</span>
+      <span><i class="dot" style="background:var(--c-R)"></i>Right</span>
+      <span><i class="dot" style="background:var(--c-L)"></i>Left</span>
+    </div>
+  </div>
+
+<script>
+"use strict";
+
+/* ---------- geometry / model ---------- */
+const STEP = 64;          // distance between cubie centers (cubie=60, gap=4)
+const HALF = 30;          // half a cubie
+
+// Standard color scheme.  CSS axes: +X right, +Y down, +Z toward viewer.
+const COLORS = { U:"var(--c-U)", D:"var(--c-D)", F:"var(--c-F)",
+                 B:"var(--c-B)", R:"var(--c-R)", L:"var(--c-L)" };
+
+// Each face: class, outward normal (local), which sticker color it carries.
+const FACE_DEFS = [
+  { cls:"f-rx", dir:[ 1, 0, 0], color:"R" }, // +X
+  { cls:"f-lx", dir:[-1, 0, 0], color:"L" }, // -X
+  { cls:"f-dy", dir:[ 0, 1, 0], color:"D" }, // +Y
+  { cls:"f-uy", dir:[ 0,-1, 0], color:"U" }, // -Y
+  { cls:"f-fz", dir:[ 0, 0, 1], color:"F" }, // +Z
+  { cls:"f-bz", dir:[ 0, 0,-1], color:"B" }, // -Z
+];
+
+// A face turn = axis + which slice + rotation sign.
+// "clockwise as seen from the outside of that face" => rotateAxis(+90) for the
+// +face and rotateAxis(-90) for the -face. (Verified against CSS matrices.)
+const FACES = {
+  R:{axis:"x", layer: 1, sign: 1},
+  L:{axis:"x", layer:-1, sign:-1},
+  U:{axis:"y", layer:-1, sign:-1},
+  D:{axis:"y", layer: 1, sign: 1},
+  F:{axis:"z", layer: 1, sign: 1},
+  B:{axis:"z", layer:-1, sign:-1},
+};
+const AXIS_IDX = {x:0, y:1, z:2};
+
+/* ---------- small linear algebra (exact integer 90° rotations) ---------- */
+const I = [[1,0,0],[0,1,0],[0,0,1]];
+function rotMat(axis, sign){
+  if(axis==="x") return sign>0 ? [[1,0,0],[0,0,-1],[0,1,0]]
+                               : [[1,0,0],[0,0,1],[0,-1,0]];
+  if(axis==="y") return sign>0 ? [[0,0,1],[0,1,0],[-1,0,0]]
+                               : [[0,0,-1],[0,1,0],[1,0,0]];
+  return sign>0 ? [[0,-1,0],[1,0,0],[0,0,1]]
+               : [[0,1,0],[-1,0,0],[0,0,1]];
+}
+function matMul(A,B){
+  const r=[[0,0,0],[0,0,0],[0,0,0]];
+  for(let i=0;i<3;i++) for(let j=0;j<3;j++){
+    let s=0; for(let k=0;k<3;k++) s+=A[i][k]*B[k][j]; r[i][j]=s;
+  }
+  return r;
+}
+function matVec(M,v){ return [ M[0][0]*v[0]+M[0][1]*v[1]+M[0][2]*v[2],
+                               M[1][0]*v[0]+M[1][1]*v[1]+M[1][2]*v[2],
+                               M[2][0]*v[0]+M[2][1]*v[1]+M[2][2]*v[2] ]; }
+
+/* ---------- transform strings ---------- */
+function mat3d(R){
+  // column-major matrix3d for the 3x3 rotation R
+  return `matrix3d(${R[0][0]},${R[1][0]},${R[2][0]},0,`+
+         `${R[0][1]},${R[1][1]},${R[2][1]},0,`+
+         `${R[0][2]},${R[1][2]},${R[2][2]},0,0,0,0,1)`;
+}
+function baseT(c){
+  const [x,y,z]=c.pos;
+  // transform-origin is the cubie center (30,30,0), so to put the
+  // center at grid point (x*STEP, y*STEP, z*STEP) we translate by
+  // (x*STEP-30, y*STEP-30, z*STEP). matrix3d() then orients the stickers.
+  return `translate3d(${x*STEP-HALF}px,${y*STEP-HALF}px,${z*STEP}px) ${mat3d(c.R)}`;
+}
+
+/* ---------- build the cube ---------- */
+const cube  = document.getElementById("cube");
+const rotor = document.getElementById("rotor");
+const cubies = [];
+
+function stickerBg(faceColor){
+  // glossy 3D sticker: white highlight top-left, soft shade bottom-right
+  return `linear-gradient(155deg, rgba(255,255,255,.55) 0%, rgba(255,255,255,.06) 38%, rgba(0,0,0,.24) 100%), ${faceColor}`;
+}
+
+(function build(){
+  for(let x=-1;x<=1;x++) for(let y=-1;y<=1;y++) for(let z=-1;z<=1;z++){
+    if(x===0&&y===0&&z===0) continue;             // invisible core
+    const el=document.createElement("div");
+    el.className="cubie";
+    for(const f of FACE_DEFS){
+      const face=document.createElement("div");
+      face.className="face "+f.cls;
+      // outward if this cubie sits on the face's side
+      const outward = (f.dir[0]!==0 && x===f.dir[0]) ||
+                      (f.dir[1]!==0 && y===f.dir[1]) ||
+                      (f.dir[2]!==0 && z===f.dir[2]);
+      if(outward){
+        const s=document.createElement("div");
+        s.className="sticker";
+        s.style.background=stickerBg(COLORS[f.color]);
+        face.appendChild(s);
+      }
+      el.appendChild(face);
+    }
+    el.style.transform=baseT({pos:[x,y,z],R:I});
+    cube.appendChild(el);
+    cubies.push({el, initPos:[x,y,z], pos:[x,y,z], R:I});
+  }
+})();
+
+/* ---------- move animation (re-parent the layer into a rotor ---------- *
+ * that spins about the true cube center, then bake the new state).      */
+const wait = ms => new Promise(r=>setTimeout(r,ms));
+
+async function applyMove(mv, dur){
+  const def  = FACES[mv.face];
+  const axis = def.axis, layer = def.layer;
+  const angle= mv.sign*90;
+  const Rot  = rotMat(axis, mv.sign);
+  const L    = "XYZ"[AXIS_IDX[axis]];
+  const layerCubies = cubies.filter(c => c.pos[AXIS_IDX[axis]] === layer);
+  if(layerCubies.length===0) return;
+
+  // move layer cubies into the rotor (identical coordinate system → no jump)
+  for(const c of layerCubies) rotor.appendChild(c.el);
+
+  // commit start pose, then animate
+  rotor.style.transition="none";
+  rotor.style.transform=`rotate${L}(0deg)`;
+  void rotor.offsetWidth;                          // force reflow
+  rotor.style.transition=`transform ${dur}ms cubic-bezier(.45,.05,.25,1)`;
+  rotor.style.transform=`rotate${L}(${angle}deg)`;
+
+  await wait(dur+40);
+
+  // bake: final visual = Rot·T(p)·R == translate3d(Rot·p)·matrix3d(Rot·R)
+  //     so reparent back to cube with that exact transform → seamless swap.
+  rotor.style.transition="none";
+  rotor.style.transform="none";
+  for(const c of layerCubies){
+    c.pos = matVec(Rot, c.pos);
+    c.R   = matMul(Rot, c.R);
+    cube.appendChild(c.el);
+    c.el.style.transition="none";
+    c.el.style.transform = baseT(c);
+  }
+}
+
+/* ---------- scramble / solve / reset ---------- */
+let history = [];        // moves actually performed (not yet undone)
+let busy = false;
+
+const $scramble = document.getElementById("scramble");
+const $solve    = document.getElementById("solve");
+const $reset    = document.getElementById("reset");
+const $status   = document.getElementById("status");
+const $speed    = document.getElementById("speed");
+
+const speed = () => +$speed.value;
+
+function setBusy(b){
+  busy=b;
+  $scramble.disabled=b; $solve.disabled=b; $reset.disabled=b;
+  $status.classList.toggle("busy",b);
+  $status.classList.toggle("solved", !b && history.length===0);
+}
+function setStatus(t){ $status.textContent=t; }
+
+async function scramble(){
+  if(busy) return;
+  setBusy(true); setStatus("Scrambling…");
+  history = [];
+  const faceNames=Object.keys(FACES);
+  let prevAxis=null;
+  const N=22;
+  for(let i=0;i<N;i++){
+    let mv;
+    do{ mv={face:faceNames[(Math.random()*faceNames.length)|0],
+           sign: Math.random()<.5?1:-1 }; }
+    while(FACES[mv.face].axis===prevAxis);
+    prevAxis=FACES[mv.face].axis;
+    history.push(mv);
+    await applyMove(mv, Math.max(110, speed()*0.7));
+  }
+  setBusy(false); setStatus("Scrambled — press Solve");
+  $status.classList.remove("solved");
+}
+async function solve(){
+  if(busy || history.length===0) return;
+  setBusy(true); setStatus("Solving…");
+  while(history.length){
+    const mv=history.pop();
+    await applyMove({face:mv.face, sign:-mv.sign}, speed());
+  }
+  setBusy(false); setStatus("Solved ✓"); $status.classList.add("solved");
+}
+function reset(){
+  if(busy) return;
+  history=[];
+  for(const c of cubies){
+    c.pos=[...c.initPos]; c.R=I;
+    c.el.style.transition="none";
+    c.el.style.transform=baseT(c);
+  }
+  setStatus("Reset"); $status.classList.add("solved");
+}
+$scramble.addEventListener("click", scramble);
+$solve.addEventListener("click", solve);
+$reset.addEventListener("click", reset);
+
+/* ---------- orbit the view (drag) + slow idle spin ---------- */
+const stage= document.getElementById("stage");
+let viewX=-30, viewY=-34, dragging=false, lastX=0, lastY=0;
+
+stage.addEventListener("pointerdown", e=>{
+  dragging=true; lastX=e.clientX; lastY=e.clientY;
+  stage.setPointerCapture(e.pointerId);
+});
+stage.addEventListener("pointermove", e=>{
+  if(!dragging) return;
+  viewY += (e.clientX-lastX)*0.45;
+  viewX -= (e.clientY-lastY)*0.45;
+  viewX  = Math.max(-86, Math.min(86, viewX));
+  lastX=e.clientX; lastY=e.clientY;
+  cube.style.transform=`rotateX(${viewX}deg) rotateY(${viewY}deg)`;
+});
+stage.addEventListener("pointerup",     ()=>dragging=false);
+stage.addEventListener("pointercancel",  ()=>dragging=false);
+stage.addEventListener("pointerleave",   ()=>{ if(dragging) dragging=false; });
+
+// gentle idle rotation so the cube always feels alive
+function idleSpin(){
+  if(!dragging){
+    viewY += 0.12;
+    cube.style.transform=`rotateX(${viewX}deg) rotateY(${viewY}deg)`;
+  }
+  requestAnimationFrame(idleSpin);
+}
+requestAnimationFrame(idleSpin);
+
+setStatus("Solved"); $status.classList.add("solved");
+</script>
+</body>
+</html>

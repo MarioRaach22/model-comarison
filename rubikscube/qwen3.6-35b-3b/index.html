@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>3D Rubik's Cube</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    overflow: hidden;
+    color: #fff;
+  }
+
+  h1 {
+    font-size: 2rem;
+    margin-bottom: 10px;
+    text-shadow: 0 0 20px rgba(255,255,255,0.3);
+    letter-spacing: 2px;
+  }
+
+  .controls {
+    display: flex;
+    gap: 20px;
+    margin-bottom: 20px;
+    z-index: 10;
+  }
+
+  button {
+    padding: 12px 32px;
+    font-size: 1.1rem;
+    font-weight: 700;
+    border: none;
+    border-radius: 50px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+  }
+
+  #scrambleBtn {
+    background: linear-gradient(135deg, #f7971e, #ffd200);
+    color: #1a1a2e;
+    box-shadow: 0 4px 20px rgba(247, 151, 30, 0.5);
+  }
+
+  #scrambleBtn:hover:not(:disabled) {
+    transform: translateY(-3px) scale(1.05);
+    box-shadow: 0 8px 30px rgba(247, 151, 30, 0.7);
+  }
+
+  #solveBtn {
+    background: linear-gradient(135deg, #11998e, #38ef7d);
+    color: #1a1a2e;
+    box-shadow: 0 4px 20px rgba(56, 239, 125, 0.5);
+  }
+
+  #solveBtn:hover:not(:disabled) {
+    transform: translateY(-3px) scale(1.05);
+    box-shadow: 0 8px 30px rgba(56, 239, 125, 0.7);
+  }
+
+  button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    transform: none !important;
+  }
+
+  .scene {
+    width: 300px;
+    height: 300px;
+    perspective: 1200px;
+    perspective-origin: 50% 50%;
+  }
+
+  .cube-container {
+    width: 100%;
+    height: 100%;
+    position: relative;
+    transform-style: preserve-3d;
+    transform: rotateX(-30deg) rotateY(-45deg);
+    transition: transform 0.3s ease;
+  }
+
+  .cubie {
+    position: absolute;
+    width: 90px;
+    height: 90px;
+    left: 50%;
+    top: 50%;
+    margin-left: -45px;
+    margin-top: -45px;
+    transform-style: preserve-3d;
+  }
+
+  .face {
+    position: absolute;
+    width: 90px;
+    height: 90px;
+    border-radius: 12px;
+    border: 3px solid #1a1a1a;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    font-size: 1.2rem;
+    backface-visibility: visible;
+    /* 3D inner shadow for depth */
+    box-shadow: inset 0 0 15px rgba(0,0,0,0.4), 0 0 5px rgba(0,0,0,0.3);
+  }
+
+  /* Face positioning in 3D */
+  .face--front  { transform: rotateY(0deg) translateZ(45px); }
+  .face--back   { transform: rotateY(180deg) translateZ(45px); }
+  .face--right  { transform: rotateY(90deg) translateZ(45px); }
+  .face--left   { transform: rotateY(-90deg) translateZ(45px); }
+  .face--top    { transform: rotateX(90deg) translateZ(45px); }
+  .face--bottom { transform: rotateX(-90deg) translateZ(45px); }
+
+  /* Face colors with glossy/3D effect */
+  .face--U {
+    background: linear-gradient(145deg, #ffffff, #e6e6e6);
+    box-shadow: inset 0 0 15px rgba(0,0,0,0.2), 0 0 5px rgba(0,0,0,0.3);
+  }
+  .face--R {
+    background: linear-gradient(145deg, #ff4136, #c0120a);
+    box-shadow: inset 0 0 15px rgba(0,0,0,0.3), 0 0 5px rgba(0,0,0,0.3);
+  }
+  .face--F {
+    background: linear-gradient(145deg, #2ecc40, #0a9e1e);
+    box-shadow: inset 0 0 15px rgba(0,0,0,0.3), 0 0 5px rgba(0,0,0,0.3);
+  }
+  .face--L {
+    background: linear-gradient(145deg, #ff851b, #c95f00);
+    box-shadow: inset 0 0 15px rgba(0,0,0,0.3), 0 0 5px rgba(0,0,0,0.3);
+  }
+  .face--D {
+    background: linear-gradient(145deg, #ffdc00, #d4b200);
+    box-shadow: inset 0 0 15px rgba(0,0,0,0.2), 0 0 5px rgba(0,0,0,0.3);
+  }
+  .face--B {
+    background: linear-gradient(145deg, #0074d9, #004a8f);
+    box-shadow: inset 0 0 15px rgba(0,0,0,0.3), 0 0 5px rgba(0,0,0,0.3);
+  }
+
+  /* Glossy overlay */
+  .face::after {
+    content: '';
+    position: absolute;
+    top: 5px;
+    left: 5px;
+    right: 5px;
+    height: 35px;
+    background: linear-gradient(180deg, rgba(255,255,255,0.35) 0%, rgba(255,255,255,0) 100%);
+    border-radius: 10px 10px 50% 50%;
+    pointer-events: none;
+  }
+
+  /* Inner black area (sticker effect) */
+  .face-inner {
+    width: 72px;
+    height: 72px;
+    border-radius: 8px;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 1;
+  }
+
+  .status {
+    margin-top: 20px;
+    font-size: 1rem;
+    opacity: 0.8;
+    min-height: 24px;
+    text-align: center;
+  }
+
+  .move-counter {
+    margin-top: 8px;
+    font-size: 0.9rem;
+    opacity: 0.6;
+  }
+
+  /* Ambient glow behind cube */
+  .scene::before {
+    content: '';
+    position: absolute;
+    width: 350px;
+    height: 350px;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: radial-gradient(circle, rgba(255,255,255,0.05) 0%, transparent 70%);
+    border-radius: 50%;
+    pointer-events: none;
+  }
+
+  @keyframes pulseGlow {
+    0%, 100% { opacity: 0.5; }
+    50% { opacity: 1; }
+  }
+
+  .solving .scene {
+    animation: pulseGlow 1s ease-in-out infinite;
+  }
+</style>
+</head>
+<body>
+
+<h1>🧊 Rubik's Cube</h1>
+
+<div class="controls">
+  <button id="scrambleBtn">🔀 Scramble</button>
+  <button id="solveBtn" disabled>✅ Solve</button>
+</div>
+
+<div class="scene">
+  <div class="cube-container" id="cubeContainer"></div>
+</div>
+
+<div class="status" id="status">Click Scramble to start!</div>
+<div class="move-counter" id="moveCounter"></div>
+
+<script>
+// ========== CONSTANTS ==========
+const CUBE_SIZE = 90;
+const GAP = 3; // gap between cubies
+const STEP = CUBE_SIZE + GAP;
+const ANIM_SPEED = 300; // ms per 90° turn
+const SCRAMBLE_LENGTH = 25;
+
+// Face orientations
+const FACES = {
+  U: { axis: 'y', layer: 1,  rot: 'rotateX(-90deg)' },
+  D: { axis: 'y', layer: -1, rot: 'rotateX(90deg)' },
+  R: { axis: 'x', layer: 1,  rot: 'rotateY(-90deg)' },
+  L: { axis: 'x', layer: -1, rot: 'rotateY(90deg)' },
+  F: { axis: 'z', layer: 1,  rot: 'rotateZ(-90deg)' },
+  B: { axis: 'z', layer: -1, rot: 'rotateZ(90deg)' },
+};
+
+// Color mapping by face name
+const FACE_COLORS = {
+  U: 'U', D: 'D', R: 'R', L: 'L', F: 'F', B: 'B'
+};
+
+// ========== STATE ==========
+let cubies = [];
+let moveHistory = [];
+let isAnimating = false;
+let cubeRotation = { x: -30, y: -45 };
+
+// ========== INIT ==========
+const container = document.getElementById('cubeContainer');
+const scrambleBtn = document.getElementById('scrambleBtn');
+const solveBtn = document.getElementById('solveBtn');
+const statusEl = document.getElementById('status');
+const moveCounterEl = document.getElementById('moveCounter');
+
+function init() {
+  // Create 27 cubies
+  for (let x = -1; x <= 1; x++) {
+    for (let y = -1; y <= 1; y++) {
+      for (let z = -1; z <= 1; z++) {
+        const cubie = document.createElement('div');
+        cubie.className = 'cubie';
+        cubie.style.transform = `translate3d(${x * STEP}px, ${y * STEP}px, ${z * STEP}px)`;
+
+        // Create 6 faces
+        const faceData = [
+          { cls: 'front',  axis: 'z', layer: 1,  color: z === 1  ? 'F' : null },
+          { cls: 'back',   axis: 'z', layer: -1, color: z === -1 ? 'B' : null },
+          { cls: 'right',  axis: 'x', layer: 1,  color: x === 1  ? 'R' : null },
+          { cls: 'left',   axis: 'x', layer: -1, color: x === -1 ? 'L' : null },
+          { cls: 'top',    axis: 'y', layer: 1,  color: y === 1  ? 'U' : null },
+          { cls: 'bottom', axis: 'y', layer: -1, color: y === -1 ? 'D' : null },
+        ];
+
+        faceData.forEach(f => {
+          const face = document.createElement('div');
+          face.className = `face face--${f.cls} face--${f.color || 'X'}`;
+          face.dataset.face = f.cls;
+          face.dataset.axis = f.axis;
+          face.dataset.layer = f.layer;
+
+          if (f.color) {
+            const inner = document.createElement('div');
+            inner.className = 'face-inner';
+            inner.style.background = `var(--color-${f.color})`;
+            // Use inline style for the gradient since CSS vars with gradients are tricky
+            const colors = {
+              U: ['#ffffff', '#e6e6e6'],
+              R: ['#ff4136', '#c0120a'],
+              F: ['#2ecc40', '#0a9e1e'],
+              L: ['#ff851b', '#c95f00'],
+              D: ['#ffdc00', '#d4b200'],
+              B: ['#0074d9', '#004a8f'],
+            };
+            const [c1, c2] = colors[f.color];
+            inner.style.background = `linear-gradient(145deg, ${c1}, ${c2})`;
+            face.appendChild(inner);
+          } else {
+            // Inner face - black plastic look
+            const inner = document.createElement('div');
+            inner.className = 'face-inner';
+            inner.style.background = '#1a1a1a';
+            inner.style.borderRadius = '4px';
+            face.appendChild(inner);
+          }
+
+          cubie.appendChild(face);
+        });
+
+        container.appendChild(cubie);
+
+        cubies.push({
+          el: cubie,
+          x, y, z,        // logical position
+          currentTransform: `translate3d(${x * STEP}px, ${y * STEP}px, ${z * STEP}px)`,
+        });
+      }
+    }
+  }
+
+  updateMoveCounter();
+}
+
+// ========== ANIMATION ==========
+function animateRotation(faceName, direction = 1, speed = ANIM_SPEED, callback = null) {
+  return new Promise(resolve => {
+    isAnimating = true;
+    scrambleBtn.disabled = true;
+    solveBtn.disabled = true;
+    statusEl.textContent = `${faceName}${direction > 0 ? '' : "'"} — turning...`;
+
+    const face = FACES[faceName];
+    const angle = 90 * direction;
+
+    // Find cubies in this layer
+    const layerCubies = cubies.filter(c => {
+      if (face.axis === 'x') return c.x === face.layer;
+      if (face.axis === 'y') return c.y === face.layer;
+      if (face.axis === 'z') return c.z === face.layer;
+    });
+
+    // Create a temporary pivot group
+    const pivot = document.createElement('div');
+    pivot.style.position = 'absolute';
+    pivot.style.width = '0';
+    pivot.style.height = '0';
+    pivot.style.left = '50%';
+    pivot.style.top = '50%';
+    pivot.style.transformStyle = 'preserve-3d';
+    pivot.style.transition = `transform ${speed}ms cubic-bezier(0.4, 0.0, 0.2, 1)`;
+
+    // Attach cubies to pivot by setting their transform to be relative
+    layerCubies.forEach(c => {
+      pivot.appendChild(c.el);
+      // We need to set their current visual transform relative to pivot
+      // The cubie's current transform is translate3d(x,y,z) inside container
+      // When parent becomes pivot, we keep the same position
+    });
+
+    container.appendChild(pivot);
+
+    // Force reflow
+    void pivot.offsetHeight;
+
+    // Animate pivot rotation
+    if (face.axis === 'x') {
+      pivot.style.transform = `rotateX(${angle}deg)`;
+    } else if (face.axis === 'y') {
+      pivot.style.transform = `rotateY(${angle}deg)`;
+    } else if (face.axis === 'z') {
+      pivot.style.transform = `rotateZ(${angle}deg)`;
+    }
+
+    setTimeout(() => {
+      // Update logical positions of affected cubies
+      layerCubies.forEach(c => {
+        const oldX = c.x, oldY = c.y, oldZ = c.z;
+        // 90° rotation around axis
+        if (face.axis === 'x') {
+          // rotate around x: y' = y*cos - z*sin, z' = y*sin + z*cos
+          c.y = direction > 0 ? -c.z : c.z;
+          c.z = direction > 0 ? c.y : -c.y;
+        } else if (face.axis === 'y') {
+          c.x = direction > 0 ? c.z : -c.z;
+          c.z = direction > 0 ? -c.x : c.x;
+        } else if (face.axis === 'z') {
+          c.x = direction > 0 ? -c.y : c.y;
+          c.y = direction > 0 ? c.x : -c.x;
+        }
+
+        // Update visual position
+        c.el.style.position = 'absolute';
+        c.el.style.left = '50%';
+        c.el.style.top = '50%';
+        c.el.style.marginLeft = '-45px';
+        c.el.style.marginTop = '-45px';
+        c.el.style.transform = `translate3d(${c.x * STEP}px, ${c.y * STEP}px, ${c.z * STEP}px)`;
+        container.appendChild(c.el);
+      });
+
+      // Clean up pivot
+      if (pivot.parentNode) pivot.parentNode.removeChild(pivot);
+
+      isAnimating = false;
+      if (!isSolving) {
+        scrambleBtn.disabled = false;
+        solveBtn.disabled = moveHistory.length === 0;
+      }
+      statusEl.textContent = moveHistory.length > 0
+        ? `Moves made: ${moveHistory.length}`
+        : 'Click Scramble to start!';
+      updateMoveCounter();
+      resolve();
+    }, speed);
+  });
+}
+
+// ========== MOVES ==========
+const ALL_FACES = ['U', 'D', 'R', 'L', 'F', 'B'];
+
+function randomMove() {
+  const face = ALL_FACES[Math.floor(Math.random() * ALL_FACES.length)];
+  const dir = Math.random() > 0.5 ? 1 : -1;
+  return { face, dir };
+}
+
+function inverseMove(move) {
+  return { face: move.face, dir: -move.dir };
+}
+
+async function scramble() {
+  if (isAnimating) return;
+  moveHistory = [];
+  statusEl.textContent = '🔀 Scrambling...';
+  updateMoveCounter();
+
+  for (let i = 0; i < SCRAMBLE_LENGTH; i++) {
+    const move = randomMove();
+    await animateRotation(move.face, move.dir, 150);
+    moveHistory.push(move);
+    updateMoveCounter();
+    // Small delay between moves for visibility
+    await new Promise(r => setTimeout(r, 80));
+  }
+
+  statusEl.textContent = `Scrambled! (${SCRAMBLE_LENGTH} moves)`;
+  solveBtn.disabled = false;
+}
+
+let isSolving = false;
+
+async function solve() {
+  if (isAnimating || moveHistory.length === 0) return;
+  isSolving = true;
+  document.body.classList.add('solving');
+  solveBtn.disabled = true;
+  scrambleBtn.disabled = true;
+
+  statusEl.textContent = '✅ Solving...';
+  updateMoveCounter();
+
+  // Reverse the scramble moves
+  const reverseSequence = [...moveHistory].reverse().map(inverseMove);
+
+  for (let i = 0; i < reverseSequence.length; i++) {
+    const move = reverseSequence[i];
+    await animateRotation(move.face, move.dir, 200);
+    moveHistory.pop();
+    updateMoveCounter();
+    await new Promise(r => setTimeout(r, 60));
+  }
+
+  statusEl.textContent = '🎉 Solved!';
+  isSolving = false;
+  document.body.classList.remove('solving');
+  solveBtn.disabled = true;
+  scrambleBtn.disabled = false;
+}
+
+function updateMoveCounter() {
+  moveCounterEl.textContent = moveHistory.length > 0
+    ? `Moves: ${moveHistory.map(m => `${m.face}${m.dir > 0 ? '' : "'"}`).join(' ')}`
+    : '';
+}
+
+// ========== CONTROLS ==========
+scrambleBtn.addEventListener('click', scramble);
+solveBtn.addEventListener('click', solve);
+
+// Mouse drag to rotate the view
+let isDragging = false;
+let lastMouse = { x: 0, y: 0 };
+
+document.addEventListener('mousedown', (e) => {
+  if (e.target.tagName === 'BUTTON') return;
+  isDragging = true;
+  lastMouse = { x: e.clientX, y: e.clientY };
+});
+
+document.addEventListener('mousemove', (e) => {
+  if (!isDragging) return;
+  const dx = e.clientX - lastMouse.x;
+  const dy = e.clientY - lastMouse.y;
+  cubeRotation.y += dx * 0.5;
+  cubeRotation.x -= dy * 0.5;
+  container.style.transform = `rotateX(${cubeRotation.x}deg) rotateY(${cubeRotation.y}deg)`;
+  lastMouse = { x: e.clientX, y: e.clientY };
+});
+
+document.addEventListener('mouseup', () => {
+  isDragging = false;
+});
+
+// Touch support
+document.addEventListener('touchstart', (e) => {
+  if (e.target.tagName === 'BUTTON') return;
+  isDragging = true;
+  lastMouse = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+});
+
+document.addEventListener('touchmove', (e) => {
+  if (!isDragging) return;
+  const dx = e.touches[0].clientX - lastMouse.x;
+  const dy = e.touches[0].clientY - lastMouse.y;
+  cubeRotation.y += dx * 0.5;
+  cubeRotation.x -= dy * 0.5;
+  container.style.transform = `rotateX(${cubeRotation.x}deg) rotateY(${cubeRotation.y}deg)`;
+  lastMouse = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+});
+
+document.addEventListener('touchend', () => {
+  isDragging = false;
+});
+
+// ========== START ==========
+init();
+</script>
+</body>
+</html>

@@ -1,0 +1,812 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>World Language Explorer</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/topojson/3.0.2/topojson.min.js"></script>
+<style>
+  :root{
+    --bg:#0d1420; --panel:#131d2b; --card:#1a2738; --line:#243349;
+    --text:#e2eaf3; --muted:#8aa0bd; --accent:#ffd54a; --accent2:#4cc2ff;
+    --ocean:#0a1320; --land:#33465e; --nodata-nf:#212a35; --nodata:#3a4350;
+    --off:#7cc6ff; --ws:#b98cff;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{background:var(--bg);color:var(--text);font:14px/1.45 system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;display:flex;flex-direction:column;overflow:hidden}
+  header{display:flex;align-items:center;gap:18px;padding:10px 16px;background:linear-gradient(180deg,#16223300,#0b1320);border-bottom:1px solid var(--line);flex:none;flex-wrap:wrap}
+  header h1{font-size:17px;margin:0;letter-spacing:.3px;white-space:nowrap}
+  header h1 .sub{color:var(--muted);font-weight:400;font-size:12px;margin-left:8px}
+  .spacer{flex:1}
+  .ctrl{display:flex;align-items:center;gap:8px}
+  .search-wrap{position:relative}
+  #search{background:var(--card);border:1px solid var(--line);color:var(--text);border-radius:8px;padding:8px 12px;width:230px;outline:none;font-size:13px}
+  #search:focus{border-color:var(--accent2)}
+  #results{position:absolute;top:calc(100% + 4px);left:0;right:0;background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow:hidden;z-index:30;display:none;max-height:300px;overflow-y:auto;box-shadow:0 10px 30px rgba(0,0,0,.5)}
+  #results .r{padding:7px 12px;cursor:pointer;font-size:13px}
+  #results .r:hover,#results .r.sel{background:#22324a}
+  #results .r .g{color:var(--muted);font-size:11px;margin-left:6px}
+  #results .empty{padding:10px 12px;color:var(--muted);font-size:12px}
+  .switch{display:inline-flex;align-items:center;gap:8px;cursor:pointer;user-select:none;font-size:13px;color:var(--muted)}
+  .switch input{display:none}
+  .track{width:38px;height:20px;background:var(--card);border:1px solid var(--line);border-radius:20px;position:relative;transition:.2s}
+  .track::after{content:"";position:absolute;top:1px;left:1px;width:16px;height:16px;border-radius:50%;background:var(--muted);transition:.2s}
+  .switch input:checked + .track{background:#1d3a55;border-color:var(--accent2)}
+  .switch input:checked + .track::after{transform:translateX(18px);background:var(--accent2)}
+  .btn{background:var(--card);border:1px solid var(--line);color:var(--text);border-radius:8px;padding:7px 11px;cursor:pointer;font-size:13px}
+  .btn:hover{border-color:var(--accent2);color:var(--accent2)}
+  #app{flex:1;display:flex;min-height:0}
+  #map{flex:1;position:relative;min-width:0;background:var(--ocean)}
+  #map svg{width:100%;height:100%;display:block;cursor:grab}
+  #map svg.grabbing{cursor:grabbing}
+  .sphere{fill:url(#oceanGrad)}
+  .graticule{fill:none;stroke:rgba(110,160,210,.07);stroke-width:.5;vector-effect:non-scaling-stroke}
+  .country{stroke:#0c1422;stroke-width:.5;vector-effect:non-scaling-stroke;transition:opacity .15s}
+  .country.hovered{stroke:var(--accent);stroke-width:1.3}
+  .country.selected{stroke:var(--accent);stroke-width:2;filter:drop-shadow(0 0 4px rgba(255,213,74,.65))}
+  #tooltip{position:fixed;pointer-events:none;background:rgba(13,20,32,.96);border:1px solid var(--line);border-radius:7px;padding:5px 9px;font-size:12px;z-index:50;display:none;white-space:nowrap;box-shadow:0 4px 14px rgba(0,0,0,.5)}
+  #tooltip .t-g{color:var(--muted);font-size:11px;margin-top:2px}
+  #tooltip .t-nd{color:#ff9e9e}
+  #legend{position:absolute;left:10px;right:10px;bottom:10px;background:rgba(13,20,32,.94);border:1px solid var(--line);border-radius:10px;padding:8px 10px;display:none;max-height:40vh;overflow:auto;z-index:20;backdrop-filter:blur(4px)}
+  #legend h4{margin:0 0 6px;font-size:12px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.5px}
+  .legend-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(165px,1fr));gap:3px 10px}
+  .item{display:flex;align-items:center;gap:7px;padding:3px 6px;border-radius:6px;cursor:pointer;font-size:12px;border:1px solid transparent}
+  .item:hover{background:rgba(255,255,255,.06)}
+  .item.active{border-color:var(--accent);background:rgba(255,213,74,.08)}
+  .sw{width:13px;height:13px;border-radius:3px;flex:none;border:1px solid rgba(0,0,0,.3)}
+  .lab{flex:1;color:var(--text)}
+  .cnt{color:var(--muted);font-variant-numeric:tabular-nums}
+  .hint{position:absolute;top:10px;left:10px;background:rgba(13,20,32,.85);border:1px solid var(--line);border-radius:8px;padding:5px 9px;font-size:11px;color:var(--muted);z-index:20;pointer-events:none}
+  #panel{width:340px;flex:none;background:var(--panel);border-left:1px solid var(--line);overflow-y:auto;padding:16px}
+  .panel-state.hidden{display:none}
+  #panel h2{font-size:19px;margin:0;line-height:1.2}
+  #panel h3{font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin:16px 0 6px;font-weight:600}
+  .muted{color:var(--muted)}
+  .small{font-size:12px}
+  .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:14px 0}
+  .stat{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px;text-align:center}
+  .stat .n{font-size:19px;font-weight:600;color:var(--accent2)}
+  .stat .l{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
+  .tips{margin:14px 0 0;padding-left:18px;color:var(--muted);font-size:12px}
+  .tips li{margin:4px 0}
+  .pc-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+  #panel button.x{background:none;border:none;color:var(--muted);font-size:16px;cursor:pointer;padding:2px 6px;line-height:1}
+  #panel button.x:hover{color:var(--text)}
+  .note{background:rgba(76,194,255,.08);border-left:3px solid var(--accent2);padding:8px 10px;border-radius:0 6px 6px 0;font-size:12px;color:#bcd6f0;margin:10px 0}
+  .lang-list{display:flex;flex-direction:column;gap:6px}
+  .lang{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:7px 9px}
+  .lang-main{display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .lname{font-weight:600}
+  .badge{font-size:10px;padding:2px 7px;border-radius:10px;font-weight:600;letter-spacing:.3px;white-space:nowrap}
+  .badge.off{background:rgba(124,198,255,.16);color:var(--off);border:1px solid rgba(124,198,255,.4)}
+  .badge.ws{background:transparent;color:var(--ws);border:1px solid rgba(185,140,255,.4)}
+  .chip{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:#c5d3e6;margin-top:5px;padding:1px 7px;border-radius:8px;background:color-mix(in srgb,var(--c) 16%, transparent);border:1px solid color-mix(in srgb,var(--c) 45%, transparent)}
+  .chip::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--c)}
+  .chip.lg{margin-top:0;font-size:12px;font-weight:600}
+  #pc-dominant{margin:10px 0 2px}
+  #pc-nodata{color:#ff9e9e}
+  @media (max-width:780px){
+    #app{flex-direction:column}
+    #panel{width:100%;border-left:none;border-top:1px solid var(--line);max-height:42vh}
+    #search{width:160px}
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>World Language Explorer<span class="sub">official &amp; widely spoken languages by country</span></h1>
+  <div class="spacer"></div>
+  <div class="ctrl search-wrap">
+    <input id="search" type="text" placeholder="Search country…" autocomplete="off" spellcheck="false">
+    <div id="results"></div>
+  </div>
+  <label class="switch" title="Color every country by the family of its dominant language">
+    <input id="familyToggle" type="checkbox">
+    <span class="track"></span>
+    <span>Color by family</span>
+  </label>
+  <button class="btn" id="resetBtn" title="Reset zoom">Reset view</button>
+</header>
+<div id="app">
+  <div id="map">
+    <svg></svg>
+    <div class="hint">Scroll to zoom · drag to pan · click a country</div>
+    <div id="tooltip"></div>
+    <div id="legend"><h4>Language families — click to highlight</h4><div class="legend-grid"></div></div>
+  </div>
+  <aside id="panel">
+    <div id="panel-default" class="panel-state">
+      <h2>Language Explorer</h2>
+      <p class="muted">Click any country on the map to see its official and widely spoken languages, each labelled with its language family. Use the search box to jump to a country, and toggle “Color by family” to paint the whole world by dominant language family.</p>
+      <div class="stats" id="stats"></div>
+      <h3>Tips</h3>
+      <ul class="tips">
+        <li>Scroll / pinch to zoom, drag to pan.</li>
+        <li>Hover for the country name; click for details.</li>
+        <li>In family mode, click a legend entry to isolate that family.</li>
+        <li>Countries with embedded “official” status (e.g. Switzerland, Belgium, South Africa, India) show every official language.</li>
+      </ul>
+    </div>
+    <div id="panel-country" class="panel-state hidden">
+      <div class="pc-head"><h2 id="pc-name"></h2><button class="x" id="pc-close" title="Close">✕</button></div>
+      <div id="pc-dominant"></div>
+      <div id="pc-note" class="note hidden"></div>
+      <h3>Official languages</h3>
+      <div id="pc-official" class="lang-list"></div>
+      <h3 id="pc-widely-h">Widely spoken</h3>
+      <div id="pc-widely" class="lang-list"></div>
+    </div>
+    <div id="panel-nodata" class="panel-state hidden">
+      <div class="pc-head"><h2 id="nd-name"></h2><button class="x" id="nd-close" title="Close">✕</button></div>
+      <p class="muted" id="pc-nodata">No language data is embedded for this territory, so details are unavailable here.</p>
+    </div>
+  </aside>
+</div>
+
+<!-- ===================== EMBEDDED LANGUAGE DATA ===================== -->
+<script id="langdata">
+// Per-language family (fine label). Fine labels that are not themselves a
+// color-group are mapped to a group via FAMILY_GROUP below.
+const LANG_FAMILY = {
+  // Germanic
+  "English":"Germanic","German":"Germanic","Dutch":"Germanic","Afrikaans":"Germanic","Frisian":"Germanic",
+  "Luxembourgish":"Germanic","Danish":"Germanic","Norwegian":"Germanic","Swedish":"Germanic",
+  "Icelandic":"Germanic","Faroese":"Germanic","Yiddish":"Germanic","Scots":"Germanic","Limburgish":"Germanic",
+  // Romance
+  "Spanish":"Romance","Portuguese":"Romance","French":"Romance","Italian":"Romance","Romanian":"Romance",
+  "Catalan":"Romance","Galician":"Romance","Romansh":"Romance","Occitan":"Romance","Corsican":"Romance",
+  "Walloon":"Romance","Sardinian":"Romance","Asturian":"Romance","Friulian":"Romance","Mirandese":"Romance",
+  "Portuñol":"Romance",
+  // Slavic
+  "Russian":"Slavic","Ukrainian":"Slavic","Belarusian":"Slavic","Polish":"Slavic","Czech":"Slavic",
+  "Slovak":"Slavic","Bulgarian":"Slavic","Macedonian":"Slavic","Serbian":"Slavic","Croatian":"Slavic",
+  "Bosnian":"Slavic","Montenegrin":"Slavic","Slovenian":"Slavic","Sorbian":"Slavic","Rusyn":"Slavic",
+  "Silesian":"Slavic","Kashubian":"Slavic",
+  // Indo-Iranian
+  "Hindi":"Indo-Iranian","Urdu":"Indo-Iranian","Bengali":"Indo-Iranian","Punjabi":"Indo-Iranian",
+  "Gujarati":"Indo-Iranian","Marathi":"Indo-Iranian","Nepali":"Indo-Iranian","Sinhala":"Indo-Iranian",
+  "Assamese":"Indo-Iranian","Odia":"Indo-Iranian","Konkani":"Indo-Iranian","Sindhi":"Indo-Iranian",
+  "Kashmiri":"Indo-Iranian","Sanskrit":"Indo-Iranian","Fijian Hindi":"Indo-Iranian","Bhojpuri":"Indo-Iranian",
+  "Persian":"Indo-Iranian","Dari":"Indo-Iranian","Tajik":"Indo-Iranian","Pashto":"Indo-Iranian",
+  "Kurdish":"Indo-Iranian","Balochi":"Indo-Iranian","Ossetian":"Indo-Iranian","Pashai":"Indo-Iranian",
+  "Romani":"Indo-Iranian","Luri":"Indo-Iranian","Gilaki":"Indo-Iranian","Mazandarani":"Indo-Iranian",
+  "Nuristani":"Indo-Iranian","Pamiri":"Indo-Iranian","Dogri":"Indo-Iranian","Maithili":"Indo-Iranian",
+  "Saraiki":"Indo-Iranian","Chittagonian":"Indo-Iranian","Sylheti":"Indo-Iranian","Rohingya":"Indo-Iranian",
+  "Zazaki":"Indo-Iranian","Gorani":"Indo-Iranian","Tharu":"Indo-Iranian","Farsi":"Indo-Iranian",
+  "Sarnami (Hindustani)":"Indo-Iranian","Gujari":"Indo-Iranian","Kurmanji":"Indo-Iranian",
+  // Other Indo-European (fine -> group via FAMILY_GROUP)
+  "Greek":"Hellenic","Albanian":"Albanian","Armenian":"Armenian","Lithuanian":"Baltic","Latvian":"Baltic",
+  "Latgalian":"Baltic","Irish":"Celtic","Welsh":"Celtic","Scottish Gaelic":"Celtic","Breton":"Celtic",
+  "Cornish":"Celtic","Manx":"Celtic",
+  // Semitic
+  "Arabic":"Semitic","Hebrew":"Semitic","Amharic":"Semitic","Tigrinya":"Semitic","Tigre":"Semitic",
+  "Maltese":"Semitic","Neo-Aramaic":"Semitic","Cypriot Arabic":"Semitic","Hassaniya Arabic":"Semitic",
+  "Soqotri":"Semitic","Mehri":"Semitic","Syriac":"Semitic","Aramaic":"Semitic","Sa'idi Arabic":"Semitic",
+  "Chadian Arabic":"Semitic","Darija":"Semitic",
+  // Cushitic
+  "Somali":"Cushitic","Oromo":"Cushitic","Afar":"Cushitic","Sidamo":"Cushitic","Beja":"Cushitic",
+  "Saho":"Cushitic","Hadiyya":"Cushitic","Wolaytta":"Cushitic","Kambata":"Cushitic","Bilen":"Cushitic","Maay":"Cushitic",
+  // Berber
+  "Tamazight":"Berber","Tachelhit":"Berber","Kabyle":"Berber","Tarifit":"Berber","Tamasheq":"Berber",
+  "Shilha":"Berber","Siwi":"Berber",
+  // Chadic
+  "Hausa":"Chadic","Kanuri":"Chadic","Margi":"Chadic",
+  // Bantu
+  "Swahili":"Bantu","Zulu":"Bantu","Xhosa":"Bantu","Shona":"Bantu","Kinyarwanda":"Bantu","Kirundi":"Bantu",
+  "Lingala":"Bantu","Kikongo":"Bantu","Tswana":"Bantu","Sotho":"Bantu","Northern Sotho":"Bantu",
+  "Tsonga":"Bantu","Swazi":"Bantu","Ndebele":"Bantu","Chichewa":"Bantu","Bemba":"Bantu","Luganda":"Bantu",
+  "Kikuyu":"Bantu","Kamba":"Bantu","Luhya":"Bantu","Gusii":"Bantu","Meru":"Bantu","Umbundu":"Bantu",
+  "Kimbundu":"Bantu","Chokwe":"Bantu","Fang":"Bantu","Bube":"Bantu","Comorian":"Bantu","Venda":"Bantu",
+  "Lozi":"Bantu","Tonga":"Bantu","Tumbuka":"Bantu","Yao":"Bantu","Sukuma":"Bantu","Nyamwezi":"Bantu",
+  "Hehe":"Bantu","Gogo":"Bantu","Kongo":"Bantu","Luba":"Bantu","Kiga":"Bantu","Runyankole":"Bantu",
+  "Nyankole":"Bantu","Soga":"Bantu","Ganda":"Bantu","Rwanda":"Bantu","Rundi":"Bantu","Makhuwa":"Bantu",
+  "Lunda":"Bantu","Nyanja":"Bantu","Ndau":"Bantu","Manyika":"Bantu","Chaga":"Bantu","Haya":"Bantu",
+  "Kalanga":"Bantu","Kgalagadi":"Bantu","Ndowe":"Bantu","Tshiluba":"Bantu","Lugisu":"Bantu","Oshiwambo":"Bantu",
+  "Herero":"Bantu","Tiv":"Niger-Congo",
+  // Niger-Congo (non-Bantu)
+  "Yoruba":"Niger-Congo","Igbo":"Niger-Congo","Akan":"Niger-Congo","Twi":"Niger-Congo","Fula":"Niger-Congo",
+  "Fulfulde":"Niger-Congo","Wolof":"Niger-Congo","Mandinka":"Niger-Congo","Bambara":"Niger-Congo",
+  "Dyula":"Niger-Congo","Ewe":"Niger-Congo","Ga":"Niger-Congo","Fon":"Niger-Congo","Susu":"Niger-Congo",
+  "Temne":"Niger-Congo","Mende":"Niger-Congo","Kpelle":"Niger-Congo","Bassa":"Niger-Congo","Grebo":"Niger-Congo",
+  "Dan":"Niger-Congo","Bété":"Niger-Congo","Sénoufo":"Niger-Congo","Anyin":"Niger-Congo","Baoulé":"Niger-Congo",
+  "Mossi":"Niger-Congo","Dagbani":"Niger-Congo","Dagaare":"Niger-Congo","Kasem":"Niger-Congo","Bariba":"Niger-Congo",
+  "Frafra":"Niger-Congo","Builsa":"Niger-Congo","Kusaal":"Niger-Congo","Moore":"Niger-Congo","Jola":"Niger-Congo",
+  "Serer":"Niger-Congo","Soninke":"Niger-Congo","Maninka":"Niger-Congo","Kabye":"Niger-Congo","Mina":"Niger-Congo",
+  "Gio":"Niger-Congo","Kaba":"Niger-Congo",
+  // Nilo-Saharan
+  "Dinka":"Nilo-Saharan","Nuer":"Nilo-Saharan","Shilluk":"Nilo-Saharan","Luo":"Nilo-Saharan","Acholi":"Nilo-Saharan",
+  "Lango":"Nilo-Saharan","Alur":"Nilo-Saharan","Kalenjin":"Nilo-Saharan","Turkana":"Nilo-Saharan","Songhay":"Nilo-Saharan",
+  "Zarma":"Nilo-Saharan","Dendi":"Nilo-Saharan","Fur":"Nilo-Saharan","Nubian":"Nilo-Saharan","Lugbara":"Nilo-Saharan",
+  "Madi":"Nilo-Saharan","Sara":"Nilo-Saharan","Kuku":"Nilo-Saharan","Bari":"Nilo-Saharan","Toposa":"Nilo-Saharan",
+  "Lotuko":"Nilo-Saharan","Anywa":"Nilo-Saharan","Jur":"Nilo-Saharan","Zaghawa":"Nilo-Saharan","Tubu":"Nilo-Saharan",
+  "Maasai":"Nilo-Saharan",
+  // Turkic
+  "Turkish":"Turkic","Azerbaijani":"Turkic","Kazakh":"Turkic","Uzbek":"Turkic","Kyrgyz":"Turkic",
+  "Turkmen":"Turkic","Uyghur":"Turkic","Tatar":"Turkic","Bashkir":"Turkic","Chuvash":"Turkic","Gagauz":"Turkic",
+  "Karakalpak":"Turkic","Kumyk":"Turkic","Karachay":"Turkic","Balkar":"Turkic","Nogai":"Turkic","Salar":"Turkic",
+  "Yakut":"Turkic","Tuvan":"Turkic","Crimean Tatar":"Turkic",
+  // Mongolic
+  "Mongolian":"Mongolic","Buryat":"Mongolic","Kalmyk":"Mongolic",
+  // Sino-Tibetan
+  "Mandarin Chinese":"Sino-Tibetan","Mandarin":"Sino-Tibetan","Cantonese":"Sino-Tibetan","Wu Chinese":"Sino-Tibetan",
+  "Min Chinese":"Sino-Tibetan","Hakka Chinese":"Sino-Tibetan","Xiang Chinese":"Sino-Tibetan","Gan Chinese":"Sino-Tibetan",
+  "Chinese":"Sino-Tibetan","Burmese":"Sino-Tibetan","Tibetan":"Sino-Tibetan","Karen":"Sino-Tibetan",
+  "Meitei":"Sino-Tibetan","Bodo":"Sino-Tibetan","Garo":"Sino-Tibetan","Naga":"Sino-Tibetan","Kachin":"Sino-Tibetan",
+  "Chin":"Sino-Tibetan","Bai":"Sino-Tibetan","Dzongkha":"Sino-Tibetan","Tshangla":"Sino-Tibetan",
+  "Bumthang":"Sino-Tibetan","Newar":"Sino-Tibetan","Gurung":"Sino-Tibetan","Tamang":"Sino-Tibetan",
+  "Rakhine":"Sino-Tibetan","Taiwanese Hokkien":"Sino-Tibetan",
+  // Dravidian
+  "Tamil":"Dravidian","Telugu":"Dravidian","Kannada":"Dravidian","Malayalam":"Dravidian","Tulu":"Dravidian",
+  "Gondi":"Dravidian","Brahui":"Dravidian","Kodava":"Dravidian","Kurukh":"Dravidian","Malto":"Dravidian",
+  // Austronesian
+  "Malay":"Austronesian","Indonesian":"Austronesian","Tagalog":"Austronesian","Filipino":"Austronesian",
+  "Cebuano":"Austronesian","Ilocano":"Austronesian","Hiligaynon":"Austronesian","Malagasy":"Austronesian",
+  "Javanese":"Austronesian","Sundanese":"Austronesian","Fijian":"Austronesian","Maori":"Austronesian",
+  "Samoan":"Austronesian","Tongan":"Austronesian","Tahitian":"Austronesian","Chamorro":"Austronesian",
+  "Palauan":"Austronesian","Marshallese":"Austronesian","Gilbertese":"Austronesian","Nauruan":"Austronesian",
+  "Waray":"Austronesian","Bikol":"Austronesian","Iban":"Austronesian","Dusun":"Austronesian","Rotuman":"Austronesian",
+  "Tausug":"Austronesian","Maguindanao":"Austronesian","Maranao":"Austronesian","Yapese":"Austronesian",
+  "Chuukese":"Austronesian","Pohnpeian":"Austronesian","Kosraean":"Austronesian","Drehu":"Austronesian",
+  "Nengone":"Austronesian","Paicî":"Austronesian","Ajië":"Austronesian","Rapa Nui":"Austronesian",
+  "Tolai":"Austronesian","Taman":"Austronesian","Lenakel":"Austronesian","Gela":"Austronesian","Are'are":"Austronesian",
+  "Kwaio":"Austronesian","Indigenous Formosan":"Austronesian","Madurese":"Austronesian","Minangkabau":"Austronesian",
+  "Tetum":"Austronesian","Mambai":"Austronesian",
+  // Austroasiatic
+  "Vietnamese":"Austroasiatic","Khmer":"Austroasiatic","Mon":"Austroasiatic","Khasi":"Austroasiatic",
+  "Santali":"Austroasiatic","Mundari":"Austroasiatic","Wa":"Austroasiatic","Palaung":"Austroasiatic",
+  "Bahnar":"Austroasiatic","Jarai":"Austroasiatic","Rhade":"Austroasiatic","Bru":"Austroasiatic","Katu":"Austroasiatic",
+  "Kuy":"Austroasiatic","Khmu":"Austroasiatic",
+  // Tai-Kadai
+  "Thai":"Tai-Kadai","Lao":"Tai-Kadai","Isan":"Tai-Kadai","Shan":"Tai-Kadai","Zhuang":"Tai-Kadai","Dong":"Tai-Kadai",
+  "Buyei":"Tai-Kadai","Northern Thai":"Tai-Kadai","Tày":"Tai-Kadai",
+  // Japonic / Koreanic / Uralic / Kartvelian
+  "Japanese":"Japonic","Ryukyuan":"Japonic","Korean":"Koreanic",
+  "Finnish":"Uralic","Estonian":"Uralic","Hungarian":"Uralic","Sami":"Uralic","Mari":"Uralic","Udmurt":"Uralic",
+  "Komi":"Uralic","Erzya":"Uralic","Moksha":"Uralic","Kven":"Uralic","Meänkieli":"Uralic",
+  "Georgian":"Kartvelian","Mingrelian":"Kartvelian","Svan":"Kartvelian","Laz":"Kartvelian",
+  // Other / Isolate (fine labels mapped to a group via FAMILY_GROUP)
+  "Basque":"Isolate","Ainu":"Isolate","Burushaski":"Isolate","Warao":"Isolate",
+  "Greenlandic":"Eskimo-Aleut","Inuktitut":"Eskimo-Aleut","Kalaallisut":"Eskimo-Aleut",
+  "Guaraní":"Tupian","Mapudungun":"Araucanian","Quechua":"Quechuan","Kichwa":"Quechuan","Aymara":"Aymaran",
+  "Nahuatl":"Uto-Aztecan","Pipil":"Uto-Aztecan",
+  "K'iche'":"Mayan","Q'eqchi'":"Mayan","Kaqchikel":"Mayan","Mam":"Mayan","Tz'utujil":"Mayan","Tzeltal":"Mayan","Mayan languages":"Mayan",
+  "Mixtec":"Oto-Manguean","Zapotec":"Oto-Manguean",
+  "Wayuu":"Arawakan","Asháninka":"Arawakan","Aguaruna":"Jivaroan","Shipibo":"Panoan","Tukano":"Tucanoan","Yanomami":"Yanomaman",
+  "Embera":"Choco","Paez":"Paezan","Nasa":"Paezan",
+  "Bribri":"Chibchan","Cabécar":"Chibchan","Kuna":"Chibchan","Ngäbere":"Chibchan","Rama":"Chibchan",
+  "Miskito":"Misumalpan","Sumo":"Misumalpan",
+  "Pemón":"Cariban","Kariña":"Cariban","Wai-Wai":"Cariban",
+  "Circassian":"Northwest Caucasian","Abkhaz":"Northwest Caucasian",
+  "Chechen":"Northeast Caucasian","Ingush":"Northeast Caucasian","Avar":"Northeast Caucasian","Dargin":"Northeast Caucasian","Lezgian":"Northeast Caucasian",
+  "Navajo":"Na-Dene","Hmong-Mien":"Hmong-Mien",
+  "Enga":"Papuan","Huli":"Papuan","Melpa":"Papuan","Fataluku":"Papuan","Khoekhoe":"Khoe-Kwadi",
+  "New Zealand Sign Language":"Sign Language",
+  // Creoles & pidgins (group "Other / Isolate")
+  "Haitian Creole":"Creole","Seychellois Creole":"Creole","Mauritian Creole":"Creole","Tok Pisin":"Creole",
+  "Bislama":"Creole","Papiamento":"Creole","Sranan Tongo":"Creole","Saramaccan":"Creole","Ndyuka":"Creole",
+  "Krio":"Creole","Jamaican Patois":"Creole","Belizean Creole":"Creole","Mekatelyu":"Creole",
+  "Cameroonian Pidgin English":"Creole","Kituba":"Creole","Sango":"Creole","Chavacano":"Creole","Kriol":"Creole",
+  "Guinea-Bissau Creole":"Creole","Guyanese Creole":"Creole","Trinidadian Creole":"Creole","French Creole":"Creole",
+  "Solomon Islands Pijin":"Creole","Maroon Creoles":"Creole","Creole":"Creole"
+};
+
+// Fine family -> color group (identity for groups already in GROUPS).
+const FAMILY_GROUP = {
+  "Hellenic":"Other Indo-European","Albanian":"Other Indo-European","Armenian":"Other Indo-European",
+  "Baltic":"Other Indo-European","Celtic":"Other Indo-European",
+  "Creole":"Other / Isolate","Arawakan":"Other / Isolate","Cariban":"Other / Isolate","Mayan":"Other / Isolate",
+  "Quechuan":"Other / Isolate","Aymaran":"Other / Isolate","Misumalpan":"Other / Isolate","Chibchan":"Other / Isolate",
+  "Oto-Manguean":"Other / Isolate","Choco":"Other / Isolate","Araucanian":"Other / Isolate","Tupian":"Other / Isolate",
+  "Tucanoan":"Other / Isolate","Yanomaman":"Other / Isolate","Na-Dene":"Other / Isolate","Isolate":"Other / Isolate",
+  "Eskimo-Aleut":"Other / Isolate","Hmong-Mien":"Other / Isolate","Papuan":"Other / Isolate",
+  "Northwest Caucasian":"Other / Isolate","Northeast Caucasian":"Other / Isolate","Paezan":"Other / Isolate",
+  "Jivaroan":"Other / Isolate","Panoan":"Other / Isolate","Uto-Aztecan":"Other / Isolate","Khoe-Kwadi":"Other / Isolate",
+  "Sign Language":"Other / Isolate"
+};
+
+// Color groups (legend order). 24 macro families.
+const GROUPS = ["Germanic","Romance","Slavic","Indo-Iranian","Other Indo-European","Semitic","Berber",
+  "Cushitic","Chadic","Bantu","Niger-Congo","Nilo-Saharan","Turkic","Mongolic","Sino-Tibetan","Dravidian",
+  "Austronesian","Austroasiatic","Tai-Kadai","Japonic","Koreanic","Uralic","Kartvelian","Other / Isolate"];
+
+// Country data, keyed by ISO 3166-1 numeric id (matching world-atlas geometries).
+// Fields: name, official[], widelySpoken[], optional dominant (fine family), optional note.
+const DATA = {
+"004":{name:"Afghanistan",official:["Dari","Pashto"],widelySpoken:["Uzbek","Turkmen","Balochi","Pashai"],dominant:"Indo-Iranian",note:"Dari (Afghan Persian) and Pashto are the two official languages."},
+"008":{name:"Albania",official:["Albanian"],widelySpoken:["Greek","Macedonian","Romani"],dominant:"Albanian"},
+"012":{name:"Algeria",official:["Arabic","Tamazight"],widelySpoken:["French","Hassaniya Arabic"],dominant:"Semitic",note:"Arabic and Tamazight (Berber) are co-official."},
+"024":{name:"Angola",official:["Portuguese"],widelySpoken:["Umbundu","Kimbundu","Kikongo","Chokwe"],dominant:"Bantu"},
+"032":{name:"Argentina",official:["Spanish"],widelySpoken:["Italian","Guaraní","Quechua"],dominant:"Romance"},
+"051":{name:"Armenia",official:["Armenian"],widelySpoken:["Russian","Kurdish"],dominant:"Armenian"},
+"036":{name:"Australia",official:["English"],widelySpoken:["Mandarin Chinese","Arabic","Vietnamese","Italian","Greek"],dominant:"Germanic",note:"No statutory official language; English is the de facto national language."},
+"040":{name:"Austria",official:["German"],widelySpoken:["Croatian","Slovenian","Hungarian","Turkish"],dominant:"Germanic"},
+"031":{name:"Azerbaijan",official:["Azerbaijani"],widelySpoken:["Russian","Lezgian","Talysh"],dominant:"Turkic"},
+"044":{name:"Bahamas",official:["English"],widelySpoken:["Haitian Creole"],dominant:"Germanic"},
+"050":{name:"Bangladesh",official:["Bengali"],widelySpoken:["English","Chittagonian","Sylheti","Rohingya"],dominant:"Indo-Iranian"},
+"112":{name:"Belarus",official:["Belarusian","Russian"],widelySpoken:["Ukrainian","Polish"],dominant:"Slavic",note:"Belarusian and Russian are both official."},
+"056":{name:"Belgium",official:["Dutch","French","German"],widelySpoken:["English","Walloon","Limburgish"],dominant:"Germanic",note:"Three official languages: Dutch (Flanders), French (Wallonia), German (east)."},
+"084":{name:"Belize",official:["English"],widelySpoken:["Belizean Creole","Spanish","Mayan languages","Garifuna"],dominant:"Germanic"},
+"204":{name:"Benin",official:["French"],widelySpoken:["Fon","Yoruba","Bariba","Dendi"],dominant:"Niger-Congo"},
+"064":{name:"Bhutan",official:["Dzongkha"],widelySpoken:["Nepali","Tshangla","Bumthang"],dominant:"Sino-Tibetan"},
+"068":{name:"Bolivia",official:["Spanish","Quechua","Aymara","Guaraní"],widelySpoken:["Chiquitano","Mojeño"],dominant:"Romance",note:"Plurinational state with 37 official languages incl. Spanish, Quechua, Aymara and Guaraní."},
+"070":{name:"Bosnia and Herzegovina",official:["Bosnian","Croatian","Serbian"],widelySpoken:[],dominant:"Slavic",note:"Three co-official languages (all mutually intelligible Serbo-Croatian)."},
+"072":{name:"Botswana",official:["English","Tswana"],widelySpoken:["Kalanga","Kgalagadi","Shona"],dominant:"Bantu"},
+"076":{name:"Brazil",official:["Portuguese"],widelySpoken:["German","Italian","Japanese","Yanomami","Tukano"],dominant:"Romance"},
+"096":{name:"Brunei",official:["Malay"],widelySpoken:["English","Mandarin Chinese","Iban","Dusun"],dominant:"Austronesian"},
+"100":{name:"Bulgaria",official:["Bulgarian"],widelySpoken:["Turkish","Romani"],dominant:"Slavic"},
+"854":{name:"Burkina Faso",official:["French"],widelySpoken:["Mossi","Fula","Dyula","Bambara"],dominant:"Niger-Congo"},
+"108":{name:"Burundi",official:["Kirundi","French","English"],widelySpoken:["Swahili"],dominant:"Bantu",note:"Kirundi, French and English are all official."},
+"116":{name:"Cambodia",official:["Khmer"],widelySpoken:["English","French","Cham","Vietnamese"],dominant:"Austroasiatic"},
+"120":{name:"Cameroon",official:["English","French"],widelySpoken:["Cameroonian Pidgin English","Fulfulde","Ewondo","Basaa","Duala"],dominant:"Niger-Congo",note:"English and French are both official; ~250 local languages."},
+"124":{name:"Canada",official:["English","French"],widelySpoken:["Mandarin Chinese","Punjabi","Spanish","Tagalog","Cree","Inuktitut"],dominant:"Germanic",note:"English and French are the official languages at federal level."},
+"140":{name:"Central African Republic",official:["Sango","French"],widelySpoken:["Lingala","Kaba"],dominant:"Niger-Congo"},
+"148":{name:"Chad",official:["French","Arabic"],widelySpoken:["Sara","Kanuri","Tubu"],dominant:"Nilo-Saharan",note:"French and Arabic are co-official."},
+"152":{name:"Chile",official:["Spanish"],widelySpoken:["Mapudungun","Quechua","Rapa Nui"],dominant:"Romance"},
+"156":{name:"China",official:["Mandarin Chinese"],widelySpoken:["Cantonese","Wu Chinese","Min Chinese","Hakka Chinese","Tibetan","Uyghur"],dominant:"Sino-Tibetan",note:"Standard Mandarin (Putonghua) is official; many regional languages."},
+"170":{name:"Colombia",official:["Spanish"],widelySpoken:["English","Wayuu","Paez","Embera"],dominant:"Romance"},
+"178":{name:"Republic of the Congo",official:["French"],widelySpoken:["Lingala","Kituba","Kikongo"],dominant:"Bantu"},
+"188":{name:"Costa Rica",official:["Spanish"],widelySpoken:["Mekatelyu","Bribri","Cabécar"],dominant:"Romance"},
+"384":{name:"Côte d'Ivoire",official:["French"],widelySpoken:["Baoulé","Dyula","Sénoufo","Bété","Anyin"],dominant:"Niger-Congo"},
+"191":{name:"Croatia",official:["Croatian"],widelySpoken:["Italian","Serbian","Hungarian"],dominant:"Slavic"},
+"192":{name:"Cuba",official:["Spanish"],widelySpoken:["Haitian Creole"],dominant:"Romance"},
+"196":{name:"Cyprus",official:["Greek","Turkish"],widelySpoken:["English","Armenian","Cypriot Arabic"],dominant:"Hellenic",note:"Greek and Turkish are the two official languages."},
+"203":{name:"Czechia",official:["Czech"],widelySpoken:["Slovak","Polish","Romani","Vietnamese"],dominant:"Slavic"},
+"180":{name:"Democratic Republic of the Congo",official:["French"],widelySpoken:["Lingala","Swahili","Kikongo","Tshiluba"],dominant:"Bantu",note:"Four national languages: Lingala, Swahili, Kikongo and Tshiluba."},
+"208":{name:"Denmark",official:["Danish"],widelySpoken:["Faroese","Greenlandic","German","English"],dominant:"Germanic"},
+"262":{name:"Djibouti",official:["Arabic","French"],widelySpoken:["Somali","Afar"],dominant:"Cushitic",note:"Arabic and French are official; Somali and Afar are the majority languages."},
+"214":{name:"Dominican Republic",official:["Spanish"],widelySpoken:["Haitian Creole"],dominant:"Romance"},
+"218":{name:"Ecuador",official:["Spanish","Quechua"],widelySpoken:["Shuar","Kichwa"],dominant:"Romance",note:"Spanish and Kichwa (Quechua) among the official languages."},
+"818":{name:"Egypt",official:["Arabic"],widelySpoken:["English","French","Sa'idi Arabic","Beja","Siwi"],dominant:"Semitic"},
+"222":{name:"El Salvador",official:["Spanish"],widelySpoken:["Nahuatl","Pipil"],dominant:"Romance"},
+"226":{name:"Equatorial Guinea",official:["Spanish","French","Portuguese"],widelySpoken:["Fang","Bube","Ndowe"],dominant:"Bantu",note:"Spanish, French and Portuguese are all official."},
+"232":{name:"Eritrea",official:["Tigrinya","Arabic","English"],widelySpoken:["Tigre","Afar","Saho","Beja","Bilen"],dominant:"Semitic",note:"No constitutionally official language; Tigrinya, Arabic and English are working languages."},
+"233":{name:"Estonia",official:["Estonian"],widelySpoken:["Russian","Ukrainian"],dominant:"Uralic"},
+"748":{name:"Eswatini",official:["Swazi","English"],widelySpoken:["Tsonga","Zulu"],dominant:"Bantu"},
+"231":{name:"Ethiopia",official:["Amharic"],widelySpoken:["Oromo","Tigrinya","Somali","Sidama","Afar","Wolaytta","Gurage"],dominant:"Cushitic",note:"Amharic is the federal working language; many regional official languages."},
+"238":{name:"Falkland Islands",official:["English"],widelySpoken:[],dominant:"Germanic"},
+"242":{name:"Fiji",official:["Fijian","Hindi","English"],widelySpoken:["Fijian Hindi","Rotuman"],dominant:"Austronesian",note:"Fijian, Hindi (Fiji Hindi) and English are the three official languages."},
+"246":{name:"Finland",official:["Finnish","Swedish"],widelySpoken:["Sami","Estonian","Russian"],dominant:"Uralic",note:"Finnish and Swedish are both official."},
+"250":{name:"France",official:["French"],widelySpoken:["English","Arabic","Spanish","Portuguese","Breton","Occitan","Corsican"],dominant:"Romance"},
+"266":{name:"Gabon",official:["French"],widelySpoken:["Fang","Mbère","Sira","Punu"],dominant:"Bantu"},
+"270":{name:"Gambia",official:["English"],widelySpoken:["Mandinka","Wolof","Fula","Jola","Serer"],dominant:"Niger-Congo"},
+"268":{name:"Georgia",official:["Georgian"],widelySpoken:["Russian","Armenian","Azerbaijani","Mingrelian","Abkhaz"],dominant:"Kartvelian"},
+"276":{name:"Germany",official:["German"],widelySpoken:["Turkish","Polish","Russian","English","Sorbian","Romani"],dominant:"Germanic"},
+"288":{name:"Ghana",official:["English"],widelySpoken:["Akan","Ewe","Ga","Dagbani","Dagaare"],dominant:"Niger-Congo"},
+"300":{name:"Greece",official:["Greek"],widelySpoken:["English","Albanian","Macedonian","Turkish","Romani"],dominant:"Hellenic"},
+"304":{name:"Greenland",official:["Greenlandic"],widelySpoken:["Danish","English"],dominant:"Eskimo-Aleut",note:"Greenlandic (Kalaallisut, an Inuit/Eskimo-Aleut language) is the sole official language."},
+"320":{name:"Guatemala",official:["Spanish"],widelySpoken:["K'iche'","Q'eqchi'","Kaqchikel","Mam"],dominant:"Romance",note:"Spanish is official; 22 Mayan languages are nationally recognized."},
+"324":{name:"Guinea",official:["French"],widelySpoken:["Fula","Maninka","Susu"],dominant:"Niger-Congo"},
+"624":{name:"Guinea-Bissau",official:["Portuguese"],widelySpoken:["Guinea-Bissau Creole","Fula","Mandinka"],dominant:"Niger-Congo"},
+"328":{name:"Guyana",official:["English"],widelySpoken:["Guyanese Creole","Hindi","Wai-Wai"],dominant:"Germanic"},
+"332":{name:"Haiti",official:["French","Haitian Creole"],widelySpoken:[],dominant:"Creole",note:"French and Haitian Creole are both official."},
+"340":{name:"Honduras",official:["Spanish"],widelySpoken:["Miskito","Garifuna","Mayan languages"],dominant:"Romance"},
+"348":{name:"Hungary",official:["Hungarian"],widelySpoken:["Romani","German","Slovak"],dominant:"Uralic"},
+"352":{name:"Iceland",official:["Icelandic"],widelySpoken:["English","Danish","Polish"],dominant:"Germanic"},
+"356":{name:"India",official:["Hindi","English"],widelySpoken:["Bengali","Telugu","Marathi","Tamil","Urdu","Gujarati","Kannada","Malayalam","Punjabi"],dominant:"Indo-Iranian",note:"Hindi and English are official at union level; 22 scheduled languages (incl. Dravidian ones)."},
+"360":{name:"Indonesia",official:["Indonesian"],widelySpoken:["Javanese","Sundanese","Malay","Madurese","Minangkabau"],dominant:"Austronesian",note:"Indonesian (Bahasa Indonesia) is official; ~700 local languages."},
+"364":{name:"Iran",official:["Persian"],widelySpoken:["Azerbaijani","Kurdish","Luri","Gilaki","Mazandarani","Balochi"],dominant:"Indo-Iranian"},
+"368":{name:"Iraq",official:["Arabic","Kurdish"],widelySpoken:["Turkmen","Syriac","Aramaic"],dominant:"Semitic",note:"Arabic and Kurdish are the two official languages."},
+"372":{name:"Ireland",official:["Irish","English"],widelySpoken:[],dominant:"Celtic",note:"Irish is the first official language; English is the second."},
+"376":{name:"Israel",official:["Hebrew","Arabic"],widelySpoken:["English","Russian","Yiddish","Amharic"],dominant:"Semitic",note:"Hebrew and Arabic are official."},
+"380":{name:"Italy",official:["Italian"],widelySpoken:["English","Spanish","French","German","Sardinian","Friulian"],dominant:"Romance",note:"Italian is official; German, French, Ladin, Slovene, Friulian and Sardinian are co-official in some regions."},
+"388":{name:"Jamaica",official:["English"],widelySpoken:["Jamaican Patois"],dominant:"Creole"},
+"392":{name:"Japan",official:["Japanese"],widelySpoken:["Ryukyuan","Ainu","English"],dominant:"Japonic"},
+"400":{name:"Jordan",official:["Arabic"],widelySpoken:["English","Circassian","Chechen"],dominant:"Semitic"},
+"398":{name:"Kazakhstan",official:["Kazakh","Russian"],widelySpoken:["Uzbek","Uyghur","Tatar"],dominant:"Turkic",note:"Kazakh and Russian are both official."},
+"404":{name:"Kenya",official:["Swahili","English"],widelySpoken:["Kikuyu","Luhya","Luo","Kalenjin","Kamba","Maasai"],dominant:"Bantu",note:"Swahili and English are official; many national languages."},
+"408":{name:"North Korea",official:["Korean"],widelySpoken:[],dominant:"Koreanic"},
+"410":{name:"South Korea",official:["Korean"],widelySpoken:["English"],dominant:"Koreanic"},
+"414":{name:"Kuwait",official:["Arabic"],widelySpoken:["English"],dominant:"Semitic"},
+"417":{name:"Kyrgyzstan",official:["Kyrgyz","Russian"],widelySpoken:["Uzbek","Turkmen"],dominant:"Turkic",note:"Kyrgyz and Russian are both official."},
+"418":{name:"Laos",official:["Lao"],widelySpoken:["Khmu","Hmong-Mien","French","English"],dominant:"Tai-Kadai"},
+"428":{name:"Latvia",official:["Latvian"],widelySpoken:["Russian","Latgalian"],dominant:"Baltic"},
+"422":{name:"Lebanon",official:["Arabic"],widelySpoken:["English","French","Armenian"],dominant:"Semitic"},
+"426":{name:"Lesotho",official:["Sotho","English"],widelySpoken:["Zulu","Xhosa"],dominant:"Bantu"},
+"430":{name:"Liberia",official:["English"],widelySpoken:["Kpelle","Bassa","Grebo","Dan"],dominant:"Niger-Congo"},
+"434":{name:"Libya",official:["Arabic"],widelySpoken:["Tamasheq","Tamazight","English"],dominant:"Semitic"},
+"440":{name:"Lithuania",official:["Lithuanian"],widelySpoken:["Russian","Polish"],dominant:"Baltic"},
+"442":{name:"Luxembourg",official:["Luxembourgish","French","German"],widelySpoken:["English","Portuguese"],dominant:"Germanic",note:"Three official languages: Luxembourgish, French and German."},
+"807":{name:"North Macedonia",official:["Macedonian"],widelySpoken:["Albanian","Romani","Turkish","Serbian"],dominant:"Slavic"},
+"450":{name:"Madagascar",official:["Malagasy","French"],widelySpoken:["English"],dominant:"Austronesian"},
+"454":{name:"Malawi",official:["English","Chichewa"],widelySpoken:["Tumbuka","Yao","Lomwe"],dominant:"Bantu",note:"English and Chichewa are official."},
+"458":{name:"Malaysia",official:["Malay"],widelySpoken:["English","Mandarin Chinese","Tamil","Iban","Dusun"],dominant:"Austronesian"},
+"466":{name:"Mali",official:["French","Bambara"],widelySpoken:["Fula","Songhay","Tamasheq","Soninke"],dominant:"Niger-Congo",note:"French is official; Bambara and 12 national languages."},
+"478":{name:"Mauritania",official:["Arabic"],widelySpoken:["Fula","Soninke","Wolof","Hassaniya Arabic"],dominant:"Semitic"},
+"484":{name:"Mexico",official:["Spanish"],widelySpoken:["Nahuatl","Mayan languages","Mixtec","Zapotec","Tzeltal"],dominant:"Romance",note:"Spanish is the de facto official language; 68 indigenous languages are nationally recognized."},
+"498":{name:"Moldova",official:["Romanian"],widelySpoken:["Russian","Gagauz","Ukrainian"],dominant:"Romance"},
+"496":{name:"Mongolia",official:["Mongolian"],widelySpoken:["Russian","Kazakh"],dominant:"Mongolic"},
+"499":{name:"Montenegro",official:["Montenegrin","Serbian","Bosnian","Croatian","Albanian"],widelySpoken:[],dominant:"Slavic",note:"Five official languages."},
+"504":{name:"Morocco",official:["Arabic","Tamazight"],widelySpoken:["Darija","French","Spanish","Tachelhit","Tarifit"],dominant:"Semitic",note:"Arabic and Tamazight (Berber) are co-official."},
+"508":{name:"Mozambique",official:["Portuguese"],widelySpoken:["Makhuwa","Tsonga","Lomwe","Sena","Shona"],dominant:"Bantu"},
+"104":{name:"Myanmar",official:["Burmese"],widelySpoken:["Shan","Karen","Kachin","Chin","Mon","Rakhine"],dominant:"Sino-Tibetan",note:"Burmese is official; many ethnic states have their own official languages."},
+"516":{name:"Namibia",official:["English"],widelySpoken:["Oshiwambo","Afrikaans","German","Herero","Khoekhoe"],dominant:"Bantu",note:"English is the sole official language since 1990."},
+"524":{name:"Nepal",official:["Nepali"],widelySpoken:["Maithili","Bhojpuri","Tharu","Tamang","Newar","Gurung"],dominant:"Indo-Iranian",note:"Nepali is official; 124+ languages recognized."},
+"528":{name:"Netherlands",official:["Dutch"],widelySpoken:["English","Frisian","Turkish","Arabic","Papiamento"],dominant:"Germanic",note:"Frisian is co-official in Friesland; Papiamento in the Caribbean municipalities."},
+"540":{name:"New Caledonia",official:["French"],widelySpoken:["Drehu","Nengone","Paicî","Ajië"],dominant:"Austronesian",note:"French is official; 28 Kanak (Austronesian) languages have regional status."},
+"554":{name:"New Zealand",official:["English","Maori","New Zealand Sign Language"],widelySpoken:["Samoan","Hindi","Chinese"],dominant:"Germanic",note:"English, Māori and NZ Sign Language are the three official languages."},
+"558":{name:"Nicaragua",official:["Spanish"],widelySpoken:["Miskito","Creole","Sumo","Garifuna","Rama"],dominant:"Romance",note:"Spanish official; English, Miskito and indigenous languages are co-official on the Caribbean coast."},
+"562":{name:"Niger",official:["French"],widelySpoken:["Hausa","Zarma","Fulfulde","Tamasheq","Kanuri"],dominant:"Chadic"},
+"566":{name:"Nigeria",official:["English"],widelySpoken:["Hausa","Yoruba","Igbo","Fulfulde","Tiv","Kanuri"],dominant:"Niger-Congo",note:"English is official; Hausa, Yoruba and Igbo are major national languages."},
+"578":{name:"Norway",official:["Norwegian"],widelySpoken:["Sami","English","Kven"],dominant:"Germanic",note:"Norwegian (Bokmål & Nynorsk) official; Sámi co-official in some areas."},
+"512":{name:"Oman",official:["Arabic"],widelySpoken:["English","Balochi","Swahili"],dominant:"Semitic"},
+"586":{name:"Pakistan",official:["Urdu","English"],widelySpoken:["Punjabi","Pashto","Sindhi","Saraiki","Balochi"],dominant:"Indo-Iranian",note:"Urdu is the national official language; English is also official."},
+"275":{name:"Palestine",official:["Arabic"],widelySpoken:["English","Hebrew"],dominant:"Semitic"},
+"591":{name:"Panama",official:["Spanish"],widelySpoken:["English","Ngäbere","Kuna","Embera"],dominant:"Romance"},
+"598":{name:"Papua New Guinea",official:["English","Tok Pisin","Hiri Motu"],widelySpoken:["Enga","Huli","Melpa","Tolai"],dominant:"Papuan",note:"Three official languages; ~830 indigenous languages (Papuan & Austronesian)."},
+"600":{name:"Paraguay",official:["Spanish","Guaraní"],widelySpoken:[],dominant:"Tupian",note:"Spanish and Guaraní are co-official; Guaraní (Tupian) is spoken by ~90%."},
+"604":{name:"Peru",official:["Spanish","Quechua","Aymara"],widelySpoken:["Asháninka","Aguaruna","Shipibo"],dominant:"Romance",note:"Spanish, Quechua and Aymara are all official."},
+"608":{name:"Philippines",official:["Filipino","English"],widelySpoken:["Cebuano","Ilocano","Hiligaynon","Waray","Tagalog"],dominant:"Austronesian",note:"Filipino and English are official; 19 regional/auxiliary languages."},
+"616":{name:"Poland",official:["Polish"],widelySpoken:["Silesian","Kashubian","German","Belarusian"],dominant:"Slavic"},
+"620":{name:"Portugal",official:["Portuguese"],widelySpoken:["English","Mirandese"],dominant:"Romance",note:"Mirandese is a recognized regional language."},
+"630":{name:"Puerto Rico",official:["Spanish","English"],widelySpoken:[],dominant:"Romance",note:"Spanish and English are the official languages of this U.S. territory."},
+"634":{name:"Qatar",official:["Arabic"],widelySpoken:["English","Urdu","Farsi"],dominant:"Semitic"},
+"642":{name:"Romania",official:["Romanian"],widelySpoken:["Hungarian","Romani","German"],dominant:"Romance"},
+"643":{name:"Russia",official:["Russian"],widelySpoken:["Tatar","Chechen","Bashkir","Chuvash","Yakut","Tuvan"],dominant:"Slavic",note:"Russian is official; 35+ languages have official status in their republics."},
+"646":{name:"Rwanda",official:["Kinyarwanda","French","English","Swahili"],widelySpoken:[],dominant:"Bantu",note:"Four official languages."},
+"728":{name:"South Sudan",official:["English"],widelySpoken:["Dinka","Nuer","Bari","Zande","Shilluk"],dominant:"Nilo-Saharan"},
+"682":{name:"Saudi Arabia",official:["Arabic"],widelySpoken:["English"],dominant:"Semitic"},
+"686":{name:"Senegal",official:["French"],widelySpoken:["Wolof","Fula","Serer","Jola","Mandinka"],dominant:"Niger-Congo"},
+"688":{name:"Serbia",official:["Serbian"],widelySpoken:["Hungarian","Bosnian","Albanian","Romani","Croatian"],dominant:"Slavic"},
+"694":{name:"Sierra Leone",official:["English"],widelySpoken:["Krio","Mende","Temne","Limba"],dominant:"Niger-Congo"},
+"703":{name:"Slovakia",official:["Slovak"],widelySpoken:["Hungarian","Romani","Ukrainian"],dominant:"Slavic"},
+"705":{name:"Slovenia",official:["Slovenian"],widelySpoken:["Hungarian","Italian","Croatian"],dominant:"Slavic"},
+"090":{name:"Solomon Islands",official:["English"],widelySpoken:["Solomon Islands Pijin","Gela","Are'are","Kwaio"],dominant:"Austronesian"},
+"706":{name:"Somalia",official:["Somali","Arabic"],widelySpoken:["English","Italian","Maay"],dominant:"Cushitic",note:"Somali and Arabic are official."},
+"710":{name:"South Africa",official:["Zulu","Xhosa","Afrikaans","English","Northern Sotho","Tswana","Sotho","Tsonga","Swazi","Venda","Ndebele"],widelySpoken:[],dominant:"Bantu",note:"11 official languages."},
+"724":{name:"Spain",official:["Spanish"],widelySpoken:["Catalan","Galician","Basque","Occitan","Asturian"],dominant:"Romance",note:"Spanish is official nationwide; Catalan, Galician, Basque etc. are co-official in their regions."},
+"144":{name:"Sri Lanka",official:["Sinhala","Tamil"],widelySpoken:["English"],dominant:"Indo-Iranian",note:"Sinhala and Tamil are the two official languages."},
+"729":{name:"Sudan",official:["Arabic","English"],widelySpoken:["Nubian","Fur","Beja","Fulfulde","Zaghawa"],dominant:"Semitic"},
+"740":{name:"Suriname",official:["Dutch"],widelySpoken:["Sranan Tongo","Sarnami (Hindustani)","Javanese","Maroon Creoles"],dominant:"Creole"},
+"752":{name:"Sweden",official:["Swedish"],widelySpoken:["English","Finnish","Sami","Meänkieli","Romani"],dominant:"Germanic",note:"Swedish is official; five minority languages are recognized."},
+"756":{name:"Switzerland",official:["German","French","Italian","Romansh"],widelySpoken:["English"],dominant:"Germanic",note:"Four national languages: German, French, Italian and Romansh."},
+"760":{name:"Syria",official:["Arabic"],widelySpoken:["Kurdish","Armenian","Turkmen","Aramaic"],dominant:"Semitic"},
+"158":{name:"Taiwan",official:["Mandarin Chinese"],widelySpoken:["Taiwanese Hokkien","Hakka Chinese","Indigenous Formosan"],dominant:"Sino-Tibetan",note:"Mandarin is official; Hakka and 16 Formosan (Austronesian) languages are national."},
+"762":{name:"Tajikistan",official:["Tajik"],widelySpoken:["Russian","Uzbek","Kyrgyz","Pamiri"],dominant:"Indo-Iranian"},
+"834":{name:"Tanzania",official:["Swahili","English"],widelySpoken:["Sukuma","Nyamwezi","Chaga","Haya","Hehe"],dominant:"Bantu",note:"Swahili and English are official."},
+"764":{name:"Thailand",official:["Thai"],widelySpoken:["Isan","Northern Thai","Malay","Chinese","Karen"],dominant:"Tai-Kadai"},
+"626":{name:"Timor-Leste",official:["Tetum","Portuguese"],widelySpoken:["Indonesian","English","Mambai","Fataluku"],dominant:"Austronesian",note:"Tetum and Portuguese are the two official languages."},
+"768":{name:"Togo",official:["French"],widelySpoken:["Ewe","Kabye","Dagbani","Mina"],dominant:"Niger-Congo"},
+"780":{name:"Trinidad and Tobago",official:["English"],widelySpoken:["Trinidadian Creole","Hindi","French Creole"],dominant:"Creole"},
+"788":{name:"Tunisia",official:["Arabic"],widelySpoken:["French","English","Darija"],dominant:"Semitic"},
+"792":{name:"Turkey",official:["Turkish"],widelySpoken:["Kurdish","Zazaki","Arabic","Laz","Armenian"],dominant:"Turkic",note:"Turkish is official; Kurdish and others are widely spoken."},
+"795":{name:"Turkmenistan",official:["Turkmen"],widelySpoken:["Russian","Uzbek"],dominant:"Turkic"},
+"800":{name:"Uganda",official:["English","Swahili"],widelySpoken:["Luganda","Lugisu","Runyankole","Luo","Acholi"],dominant:"Bantu",note:"English and Swahili are official; Swahili is the national language."},
+"804":{name:"Ukraine",official:["Ukrainian"],widelySpoken:["Russian","Crimean Tatar","Romanian","Hungarian"],dominant:"Slavic"},
+"784":{name:"United Arab Emirates",official:["Arabic"],widelySpoken:["English","Hindi","Urdu","Farsi","Tagalog"],dominant:"Semitic"},
+"826":{name:"United Kingdom",official:["English"],widelySpoken:["Welsh","Scots","Scottish Gaelic","Irish","Polish","Punjabi","Urdu"],dominant:"Germanic",note:"English is the de facto official language; Welsh, Scots and Scottish Gaelic have official status."},
+"840":{name:"United States",official:["English"],widelySpoken:["Spanish","Chinese","Tagalog","Vietnamese","Navajo"],dominant:"Germanic",note:"No federal official language; English is the de facto national language."},
+"858":{name:"Uruguay",official:["Spanish"],widelySpoken:["Portuñol","Italian"],dominant:"Romance"},
+"860":{name:"Uzbekistan",official:["Uzbek"],widelySpoken:["Russian","Tajik","Karakalpak"],dominant:"Turkic"},
+"548":{name:"Vanuatu",official:["Bislama","English","French"],widelySpoken:["Taman","Lenakel"],dominant:"Austronesian",note:"Three official languages; ~110 indigenous Austronesian languages."},
+"862":{name:"Venezuela",official:["Spanish"],widelySpoken:["Wayuu","Warao","Pemón","Kariña"],dominant:"Romance"},
+"704":{name:"Vietnam",official:["Vietnamese"],widelySpoken:["Tày","Thai","Khmer","Chinese","Hmong-Mien"],dominant:"Austroasiatic"},
+"732":{name:"Western Sahara",official:["Arabic","Spanish"],widelySpoken:["Hassaniya Arabic"],dominant:"Semitic"},
+"887":{name:"Yemen",official:["Arabic"],widelySpoken:["English","Soqotri","Mehri"],dominant:"Semitic"},
+"894":{name:"Zambia",official:["English"],widelySpoken:["Bemba","Nyanja","Tonga","Lozi","Lunda"],dominant:"Bantu"},
+"716":{name:"Zimbabwe",official:["English","Shona","Ndebele"],widelySpoken:["Ndau","Manyika","Tswana"],dominant:"Bantu",note:"English, Shona and Ndebele are the main official languages."}
+};
+
+// Geometries without an ISO id in world-atlas (Kosovo, N. Cyprus, Somaliland),
+// keyed by normalized Natural Earth name.
+const NAME_ENTRIES = {
+"kosovo":{name:"Kosovo",official:["Albanian","Serbian"],widelySpoken:["Bosnian","Turkish","Gorani","Romani"],dominant:"Albanian",note:"Albanian and Serbian are official."},
+"ncyprus":{name:"Northern Cyprus",official:["Turkish"],widelySpoken:["English","Greek"],dominant:"Turkic"},
+"somaliland":{name:"Somaliland",official:["Somali"],widelySpoken:["Arabic","English"],dominant:"Cushitic"}
+};
+</script>
+
+<!-- ===================== APP LOGIC ===================== -->
+<script>
+(function(){
+  "use strict";
+  const TOPO_URL = "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json";
+  const LAND_FILL = "#33465e";
+  const NODATA_NF = "#212a35";
+  const NODATA_F  = "#3a4350";
+
+  // Distinct categorical colors for the 24 groups (golden-angle hue spread).
+  const GROUP_COLORS = {};
+  GROUPS.forEach((g,i)=>{
+    const h = (i * 137.508) % 360;
+    const l = 0.46 + (i % 3) * 0.07;
+    GROUP_COLORS[g] = d3.hsl(h, 0.6, l).formatHex();
+  });
+
+  const normalize = s => (s||"").toLowerCase().replace(/[^a-z0-9]/g,"");
+
+  // Build a name -> entry fallback index from DATA.
+  const NAME_INDEX = {};
+  for (const k in DATA){ const e = DATA[k]; NAME_INDEX[normalize(e.name)] = e; }
+
+  function entryFor(f){
+    if(f.id && DATA[f.id]) return DATA[f.id];
+    const nk = normalize(f.properties && f.properties.name);
+    if(NAME_ENTRIES[nk]) return NAME_ENTRIES[nk];
+    if(NAME_INDEX[nk]) return NAME_INDEX[nk];
+    return null;
+  }
+  function displayName(f){ const e = entryFor(f); return e ? e.name : (f.properties && f.properties.name) || "Unknown"; }
+  function familyOf(lang){ return LANG_FAMILY[lang] || "Other / Isolate"; }
+  function groupOf(fine){ return FAMILY_GROUP[fine] || fine; }
+  function dominantFine(e){
+    if(e.dominant) return e.dominant;
+    if(e.official && e.official.length) return familyOf(e.official[0]);
+    if(e.widelySpoken && e.widelySpoken.length) return familyOf(e.widelySpoken[0]);
+    return "Other / Isolate";
+  }
+  function dominantGroup(e){ return groupOf(dominantFine(e)); }
+
+  // ---------- state ----------
+  let features = [], countrySel, spherePath, gratPath;
+  let selected = null, familyMode = false, activeGroup = null, hoverGroup = null;
+  let W = 0, H = 0;
+
+  const projection = d3.geoNaturalEarth1();
+  const path = d3.geoPath(projection);
+  const grat = d3.geoGraticule10();
+  const svg = d3.select("#map svg");
+  const g = svg.append("g");
+
+  // ocean gradient + soft vignette
+  const defs = svg.append("defs");
+  const og = defs.append("linearGradient").attr("id","oceanGrad").attr("x1","0").attr("y1","0").attr("x2","0").attr("y2","1");
+  og.append("stop").attr("offset","0%").attr("stop-color","#0c1626");
+  og.append("stop").attr("offset","100%").attr("stop-color","#070d18");
+
+  const zoom = d3.zoom()
+    .scaleExtent([1, 40])
+    .on("start", () => svg.classed("grabbing", true))
+    .on("end",   () => svg.classed("grabbing", false))
+    .on("zoom",  (ev) => g.attr("transform", ev.transform));
+  svg.call(zoom);
+
+  // ---------- rendering ----------
+  function buildLayers(){
+    g.selectAll("*").remove();
+    spherePath = g.append("path").attr("class","sphere").attr("d", path({type:"Sphere"}));
+    gratPath   = g.append("path").attr("class","graticule").attr("d", path(grat));
+    countrySel = g.append("g").attr("class","countries")
+      .selectAll("path").data(features).join("path")
+        .attr("class","country")
+        .attr("d", path)
+        .on("click",    (ev,f) => { select(f); ev.stopPropagation(); })
+        .on("mouseenter",(ev,f) => hover(f,ev))
+        .on("mousemove", (ev,f) => moveTooltip(ev))
+        .on("mouseleave", () => { hideTooltip(); unhover(); });
+    applyColors();
+  }
+
+  function redraw(){
+    if(!countrySel) return;
+    spherePath.attr("d", path({type:"Sphere"}));
+    gratPath.attr("d", path(grat));
+    countrySel.attr("d", path);
+  }
+
+  function fillFor(f){
+    const e = entryFor(f);
+    if(familyMode){
+      if(!e) return NODATA_F;
+      return GROUP_COLORS[dominantGroup(e)] || NODATA_F;
+    }
+    return e ? LAND_FILL : NODATA_NF;
+  }
+  function opacityFor(f){
+    if(!familyMode) return 1;
+    const e = entryFor(f);
+    const fg = e ? dominantGroup(e) : "No data";
+    if(activeGroup !== null) return fg === activeGroup ? 1 : 0.14;
+    if(hoverGroup !== null)  return fg === hoverGroup  ? 1 : 0.22;
+    return 1;
+  }
+  function applyColors(){
+    if(!countrySel) return;
+    countrySel
+      .attr("fill", fillFor)
+      .classed("nodata", f => !entryFor(f))
+      .classed("selected", f => f === selected)
+      .style("opacity", opacityFor);
+  }
+
+  // ---------- tooltip ----------
+  const tooltip = d3.select("#tooltip");
+  function hover(f){
+    countrySel.classed("hovered", d => d === f);
+    const e = entryFor(f);
+    let html = displayName(f);
+    if(!e) html += '<div class="t-nd">no language data</div>';
+    else if(familyMode) html += '<div class="t-g">' + dominantGroup(e) + '</div>';
+    tooltip.html(html).style("display","block");
+  }
+  function unhover(){ countrySel.classed("hovered", false); }
+  function moveTooltip(ev){ tooltip.style("left",(ev.clientX+14)+"px").style("top",(ev.clientY+14)+"px"); }
+  function hideTooltip(){ tooltip.style("display","none"); }
+
+  // clicking empty ocean deselects
+  svg.on("click", () => { selected = null; applyColors(); showDefaultPanel(); });
+
+  // ---------- panel ----------
+  const elDefault  = document.getElementById("panel-default");
+  const elCountry  = document.getElementById("panel-country");
+  const elNoData   = document.getElementById("panel-nodata");
+
+  function showDefaultPanel(){ elDefault.classList.remove("hidden"); elCountry.classList.add("hidden"); elNoData.classList.add("hidden"); }
+  function showCountryPanel(){ elDefault.classList.add("hidden"); elCountry.classList.remove("hidden"); elNoData.classList.add("hidden"); }
+  function showNoDataPanel(){  elDefault.classList.add("hidden"); elCountry.classList.add("hidden"); elNoData.classList.remove("hidden"); }
+
+  function langRow(lang, official){
+    const fam = familyOf(lang);
+    const color = GROUP_COLORS[groupOf(fam)] || NODATA_F;
+    const badge = official ? '<span class="badge off">Official</span>' : '<span class="badge ws">Widely spoken</span>';
+    return '<div class="lang"><div class="lang-main"><span class="lname">' + lang + '</span>' + badge + '</div>' +
+           '<span class="chip" style="--c:' + color + '">' + fam + '</span></div>';
+  }
+
+  function select(f){
+    selected = f;
+    applyColors();
+    const e = entryFor(f);
+    if(!e){ document.getElementById("nd-name").textContent = displayName(f); showNoDataPanel(); return; }
+    showCountryPanel();
+    document.getElementById("pc-name").textContent = e.name;
+
+    const dg = dominantGroup(e);
+    const dc = GROUP_COLORS[dg] || NODATA_F;
+    document.getElementById("pc-dominant").innerHTML =
+      '<span class="chip lg" style="--c:' + dc + '">Dominant family: ' + dg + '</span>';
+
+    const noteEl = document.getElementById("pc-note");
+    if(e.note){ noteEl.textContent = e.note; noteEl.classList.remove("hidden"); }
+    else noteEl.classList.add("hidden");
+
+    document.getElementById("pc-official").innerHTML =
+      (e.official && e.official.length) ? e.official.map(l => langRow(l,true)).join("") : '<p class="muted small">—</p>';
+
+    const wide = e.widelySpoken || [];
+    const wH = document.getElementById("pc-widely-h");
+    const wEl = document.getElementById("pc-widely");
+    if(wide.length){ wH.style.display = ""; wEl.innerHTML = wide.map(l => langRow(l,false)).join(""); }
+    else { wH.style.display = "none"; wEl.innerHTML = ""; }
+  }
+
+  function renderStats(){
+    const total = features.length;
+    let withData = 0; const fams = new Set();
+    features.forEach(f => { const e = entryFor(f); if(e){ withData++; fams.add(dominantGroup(e)); } });
+    document.getElementById("stats").innerHTML =
+      stat(total, "Countries") + stat(withData, "With data") + stat(fams.size, "Families");
+  }
+  function stat(n,l){ return '<div class="stat"><div class="n">' + n + '</div><div class="l">' + l + '</div></div>'; }
+
+  document.getElementById("pc-close").addEventListener("click", () => { selected = null; applyColors(); showDefaultPanel(); });
+  document.getElementById("nd-close").addEventListener("click", () => { selected = null; applyColors(); showDefaultPanel(); });
+
+  // ---------- legend ----------
+  const legendEl = document.getElementById("legend");
+  function buildLegend(){
+    const counts = {}; GROUPS.forEach(g => counts[g] = 0); counts["No data"] = 0;
+    features.forEach(f => { const e = entryFor(f); const gkey = e ? dominantGroup(e) : "No data"; counts[gkey] = (counts[gkey]||0)+1; });
+    const data = GROUPS.concat(["No data"]);
+    const items = d3.select(legendEl.querySelector(".legend-grid"))
+      .selectAll(".item").data(data).join("div").attr("class","item");
+    items.html(g => {
+      const c = g === "No data" ? NODATA_F : (GROUP_COLORS[g] || NODATA_F);
+      return '<span class="sw" style="background:' + c + '"></span>' +
+             '<span class="lab">' + g + '</span><span class="cnt">' + (counts[g]||0) + '</span>';
+    });
+    items.on("click", (ev,g) => { activeGroup = (activeGroup === g) ? null : g; applyColors(); updateLegendActive(); ev.stopPropagation(); })
+         .on("mouseenter", (ev,g) => { hoverGroup = g; applyColors(); })
+         .on("mouseleave", () => { hoverGroup = null; applyColors(); });
+  }
+  function updateLegendActive(){
+    d3.select(legendEl.querySelector(".legend-grid")).selectAll(".item")
+      .classed("active", g => g === activeGroup);
+  }
+
+  // ---------- family toggle ----------
+  document.getElementById("familyToggle").addEventListener("change", (ev) => {
+    familyMode = ev.target.checked;
+    legendEl.style.display = familyMode ? "block" : "none";
+    if(!familyMode) activeGroup = null;
+    applyColors();
+    updateLegendActive();
+  });
+
+  // ---------- search ----------
+  const searchInput = document.getElementById("search");
+  const resultsEl = document.getElementById("results");
+  let searchable = [];
+
+  function doSearch(){
+    const q = normalize(searchInput.value);
+    if(!q){ resultsEl.style.display = "none"; return; }
+    const matches = searchable
+      .filter(x => x.labelN.includes(q) || x.altN.includes(q))
+      .slice(0, 8);
+    if(!matches.length){
+      resultsEl.innerHTML = '<div class="empty">No country found</div>';
+    } else {
+      resultsEl.innerHTML = matches.map((m,i) =>
+        '<div class="r' + (i===0?" sel":"") + '" data-i="' + i + '"><span>' + m.label + '</span>' +
+        (m.fam ? '<span class="g">' + m.fam + '</span>' : '') + '</div>').join("");
+      resultsEl.querySelectorAll(".r").forEach((node,i) =>
+        node.addEventListener("click", () => choose(matches[i])));
+    }
+    resultsEl.style.display = "block";
+  }
+  function choose(m){
+    searchInput.value = m.label;
+    resultsEl.style.display = "none";
+    select(m.f);
+    zoomTo(m.f);
+  }
+  searchInput.addEventListener("input", doSearch);
+  searchInput.addEventListener("focus", doSearch);
+  searchInput.addEventListener("keydown", ev => {
+    if(ev.key === "Enter"){
+      const first = resultsEl.querySelector(".r");
+      if(first) first.click();
+      else resultsEl.style.display = "none";
+    } else if(ev.key === "Escape"){
+      resultsEl.style.display = "none";
+    }
+  });
+  document.addEventListener("click", ev => {
+    if(!ev.target.closest(".search-wrap")) resultsEl.style.display = "none";
+  });
+
+  function zoomTo(f){
+    const b = path.bounds(f);
+    const [[x0,y0],[x1,y1]] = b;
+    const dx = x1 - x0, dy = y1 - y0, x = (x0+x1)/2, y = (y0+y1)/2;
+    let scale = 0.9 / Math.max(dx / W, dy / H, 1e-6);
+    scale = Math.max(1, Math.min(40, scale));
+    const tr = d3.zoomIdentity.translate(W/2 - scale*x, H/2 - scale*y).scale(scale);
+    svg.transition().duration(700).call(zoom.transform, tr);
+  }
+
+  // ---------- reset ----------
+  document.getElementById("resetBtn").addEventListener("click", () => {
+    svg.transition().duration(600).call(zoom.transform, d3.zoomIdentity);
+  });
+
+  // ---------- resize ----------
+  function resize(){
+    const el = document.getElementById("map");
+    W = el.clientWidth; H = el.clientHeight;
+    if(W < 2 || H < 2 || !features.length) return;
+    svg.attr("width", W).attr("height", H);
+    projection.fitExtent([[6,6],[W-6,H-6]], {type:"FeatureCollection", features});
+    redraw();
+    svg.call(zoom.transform, d3.zoomIdentity);
+  }
+  new ResizeObserver(resize).observe(document.getElementById("map"));
+
+  // ---------- load ----------
+  d3.json(TOPO_URL).then(topo => {
+    features = topojson.feature(topo, topo.objects.countries).features;
+    searchable = features.map(f => {
+      const e = entryFor(f);
+      const label = displayName(f);
+      return { f, label, labelN: normalize(label), altN: normalize(f.properties && f.properties.name),
+               fam: e ? dominantGroup(e) : null };
+    }).sort((a,b) => a.label.localeCompare(b.label));
+    buildLegend();
+    renderStats();
+    resize();
+    showDefaultPanel();
+  }).catch(err => {
+    document.getElementById("map").insertAdjacentHTML("beforeend",
+      '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#ff9e9e;font-size:14px">Failed to load map data: ' + err.message + '</div>');
+  });
+
+  // keyboard: "/" focuses search
+  document.addEventListener("keydown", ev => {
+    if(ev.key === "/" && document.activeElement !== searchInput){ ev.preventDefault(); searchInput.focus(); }
+  });
+})();
+</script>
+</body>
+</html>

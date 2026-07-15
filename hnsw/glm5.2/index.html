@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HNSW Visualization</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+         background: #13131f; color: #d7d7e6; min-height: 100vh; }
+  header { padding: 14px 20px; background: #1c1c2b; border-bottom: 1px solid #2a2a40; }
+  header h1 { font-size: 20px; font-weight: 600; display: inline; }
+  header .sub { font-size: 12px; color: #8a8aa8; margin-left: 10px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 16px; align-items: center;
+              padding: 12px 20px; background: #181826; border-bottom: 1px solid #2a2a40; }
+  .group { display: flex; align-items: center; gap: 8px; }
+  .group label { font-size: 13px; color: #8a8aa8; }
+  button { background: #2a2a40; color: #d7d7e6; border: 1px solid #3a3a55;
+           padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 13px;
+           transition: background .15s, border-color .15s; }
+  button:hover { background: #36365a; }
+  button.active { background: #6c8cff; color: #fff; border-color: #6c8cff; }
+  input[type=range] { width: 130px; accent-color: #6c8cff; cursor: pointer; }
+  #efVal, #speedVal { font-family: monospace; color: #6c8cff; min-width: 26px; text-align: right; }
+  .main { display: flex; gap: 20px; padding: 20px; align-items: flex-start; }
+  .canvas-wrap { background: #0e0e18; border: 1px solid #2a2a40; border-radius: 10px; padding: 12px; }
+  #tabs { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
+  .tab { background: #222238; font-size: 12px; padding: 4px 10px; }
+  canvas { display: block; border-radius: 6px; background: #0e0e18; cursor: crosshair; }
+  .info { width: 310px; display: flex; flex-direction: column; gap: 14px; }
+  .recall-box { background: #1c1c2b; border: 1px solid #2a2a40; border-radius: 10px;
+                padding: 14px; text-align: center; }
+  .recall-label { font-size: 12px; color: #8a8aa8; text-transform: uppercase; letter-spacing: 1px; }
+  #recallVal { font-size: 44px; font-weight: 700; font-family: monospace; margin-top: 4px; line-height: 1; }
+  .stats { background: #1c1c2b; border: 1px solid #2a2a40; border-radius: 10px;
+           padding: 12px; font-size: 13px; display: flex; flex-direction: column; gap: 5px; }
+  .stats span { color: #6c8cff; font-family: monospace; font-weight: 600; }
+  .anim-controls { display: flex; gap: 8px; }
+  .anim-controls button { flex: 1; }
+  .legend { background: #1c1c2b; border: 1px solid #2a2a40; border-radius: 10px;
+            padding: 10px 12px; font-size: 12px; display: flex; flex-direction: column; gap: 6px; }
+  .legend-item { display: flex; align-items: center; gap: 8px; }
+  .swatch { width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0; }
+  .swatch.line { height: 3px; border-radius: 2px; }
+  .results { background: #1c1c2b; border: 1px solid #2a2a40; border-radius: 10px; padding: 12px; }
+  .results h3 { font-size: 13px; margin-bottom: 8px; color: #8a8aa8; font-weight: 600; }
+  #trueList { list-style: none; font-size: 12px; font-family: monospace;
+              display: flex; flex-direction: column; gap: 3px; max-height: 240px; overflow: auto; }
+  #trueList li { display: flex; gap: 8px; align-items: center; padding: 2px 4px; border-radius: 4px; }
+  #trueList li.found { color: #06d6a0; }
+  #trueList li.missed { color: #ef476f; background: rgba(239,71,111,.12); }
+  #trueList .rank { color: #8a8aa8; width: 18px; }
+  #trueList .mark { margin-left: auto; }
+  .hint { font-size: 12px; color: #8a8aa8; line-height: 1.5; }
+  @media (max-width: 1080px) { .main { flex-direction: column; } .info { width: auto; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>HNSW Visualization</h1><span class="sub">Hierarchical Navigable Small World · 2D interactive · built from scratch</span>
+</header>
+
+<div class="controls">
+  <div class="group"><label>M:</label>
+    <button class="mbtn" data-m="4">4</button>
+    <button class="mbtn active" data-m="8">8</button>
+    <button class="mbtn" data-m="16">16</button>
+  </div>
+  <div class="group"><label>efSearch:</label>
+    <input type="range" id="efSlider" min="1" max="200" value="50">
+    <span id="efVal">50</span>
+  </div>
+  <div class="group"><label>Speed:</label>
+    <input type="range" id="speedSlider" min="1" max="30" value="5">
+    <span id="speedVal">5</span>
+  </div>
+  <div class="group">
+    <button id="insertBtn">+100 points</button>
+    <button id="newBtn">New dataset</button>
+  </div>
+  <div class="group"><button id="viewToggle">View: Tabs</button></div>
+</div>
+
+<div class="main">
+  <div class="canvas-wrap">
+    <div id="tabs"></div>
+    <canvas id="cv"></canvas>
+  </div>
+  <div class="info">
+    <div class="recall-box">
+      <div class="recall-label">Recall@10</div>
+      <div id="recallVal">—</div>
+    </div>
+    <div class="stats">
+      <div>Points: <span id="pointCount">0</span></div>
+      <div>Layers: <span id="layerCount">0</span></div>
+      <div>HNSW distance computations: <span id="hnswDists">—</span></div>
+      <div>Brute-force distance computations: <span id="bruteDists">—</span></div>
+      <div>HNSW uses <span id="speedup">—</span> fewer distance evals</div>
+    </div>
+    <div class="anim-controls">
+      <button id="playBtn">▶ Play</button>
+      <button id="stepBtn">⏯ Step</button>
+      <button id="replayBtn">↺ Replay</button>
+    </div>
+    <div class="legend">
+      <div class="legend-item"><span class="swatch" style="background:#c77dff"></span>Entry point</div>
+      <div class="legend-item"><span class="swatch" style="background:#4a9eff"></span>Visited candidate</div>
+      <div class="legend-item"><span class="swatch" style="background:#ffd23f"></span>Currently expanding</div>
+      <div class="legend-item"><span class="swatch" style="background:#06d6a0"></span>k nearest (result)</div>
+      <div class="legend-item"><span class="swatch" style="background:#ef476f"></span>Missed true neighbor</div>
+      <div class="legend-item"><span class="swatch line" style="background:#4a8fff"></span>Explored edge</div>
+      <div class="legend-item"><span class="swatch" style="background:#fff;border:1px solid #888"></span>Query point</div>
+    </div>
+    <div class="results">
+      <h3>True 10 nearest neighbors</h3>
+      <ul id="trueList"></ul>
+    </div>
+    <div class="hint">Click anywhere on the canvas to run a k=10 search. The greedy descent is animated layer by layer. After each query the exact nearest neighbors are computed by brute force to measure recall@10 and distance-computation savings.</div>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+/* ============================================================
+   Distance (squared Euclidean — monotonic, so ordering is exact)
+   ============================================================ */
+function dist2(a, b) { const dx = a[0]-b[0], dy = a[1]-b[1]; return dx*dx + dy*dy; }
+function countedDist(q, p, counter) { if (counter) counter.n++; return dist2(q, p); }
+
+/* ============================================================
+   Binary heap (used for candidate set C and result set W)
+   ============================================================ */
+class Heap {
+  constructor(cmp) { this.a = []; this.cmp = cmp; }
+  get size() { return this.a.length; }
+  push(x) {
+    this.a.push(x);
+    let i = this.a.length - 1;
+    while (i > 0) {
+      const p = (i - 1) >> 1;
+      if (this.cmp(this.a[p], x) <= 0) break;
+      this.a[i] = this.a[p]; i = p;
+    }
+    this.a[i] = x;
+  }
+  pop() {
+    const top = this.a[0];
+    const last = this.a.pop();
+    if (this.a.length) {
+      this.a[0] = last;
+      let i = 0, n = this.a.length;
+      while (true) {
+        const l = 2*i+1, r = 2*i+2; let s = i;
+        if (l < n && this.cmp(this.a[l], this.a[s]) < 0) s = l;
+        if (r < n && this.cmp(this.a[r], this.a[s]) < 0) s = r;
+        if (s === i) break;
+        const t = this.a[s]; this.a[s] = this.a[i]; this.a[i] = t; i = s;
+      }
+    }
+    return top;
+  }
+  peek() { return this.a[0]; }
+}
+
+/* ============================================================
+   HNSW — implemented per Malkov & Yashunin (2016)
+   ============================================================ */
+class HNSW {
+  constructor(M, efConstruction) {
+    this.M = M; this.Mmax = M; this.Mmax0 = 2 * M;
+    this.efConstruction = efConstruction;
+    this.mL = 1 / Math.log(M);          // level normalization factor
+    this.entryPoint = null;              // node id of top entry
+    this.maxLevel = -1;
+    this.nodes = [];                     // {id, point, level, neighbors: [[ids per layer]]}
+  }
+
+  addPoint(point) {
+    const id = this.nodes.length;
+    // exponential level assignment: l = floor(-ln(unif) * mL)
+    let level = Math.floor(-Math.log(Math.max(Math.random(), 1e-12)) * this.mL);
+    if (level > 30) level = 30;
+    const node = { id, point, level, neighbors: Array.from({ length: level + 1 }, () => []) };
+    this.nodes.push(node);
+    this.insert(node);
+  }
+
+  // Algorithm 1: INSERT
+  insert(q) {
+    const qp = q.point;
+    if (this.entryPoint === null) { this.entryPoint = q.id; this.maxLevel = q.level; return; }
+    const L = this.maxLevel, l = q.level;
+    let curEp = [this.entryPoint];
+
+    // Phase 1: descend from top to l+1 with ef = 1 (greedy)
+    for (let lc = L; lc > l; lc--) {
+      const { W } = this.searchLayer(qp, curEp, 1, lc, null, false);
+      curEp = [W[0].id];
+    }
+    // Phase 2: from min(L, l) down to 0 with ef = efConstruction
+    for (let lc = Math.min(L, l); lc >= 0; lc--) {
+      const { W } = this.searchLayer(qp, curEp, this.efConstruction, lc, null, false);
+      const neighbors = this.selectNeighborsHeuristic(qp, W, this.M);
+      q.neighbors[lc] = neighbors.slice();
+      const Mmax = lc === 0 ? this.Mmax0 : this.Mmax;
+      // bidirectional links + pruning
+      for (const e of neighbors) {
+        const eN = this.nodes[e];
+        eN.neighbors[lc].push(q.id);
+        if (eN.neighbors[lc].length > Mmax) {
+          const eConn = eN.neighbors[lc].map(id => ({ id, d: dist2(this.nodes[id].point, eN.point) }));
+          eN.neighbors[lc] = this.selectNeighborsHeuristic(eN.point, eConn, Mmax);
+        }
+      }
+      curEp = W.map(x => x.id);   // ep ← W
+    }
+    if (l > L) { this.entryPoint = q.id; this.maxLevel = l; }
+  }
+
+  // Algorithm 2: SEARCH-LAYER
+  searchLayer(q, eps, ef, lc, counter, record) {
+    const visited = new Set();
+    const C = new Heap((a, b) => a.d - b.d);   // min-heap of candidates
+    const W = new Heap((a, b) => b.d - a.d);   // max-heap of nearest found
+    const events = [];
+    for (const e of eps) {
+      const d = countedDist(q, this.nodes[e].point, counter);
+      visited.add(e); C.push({ id: e, d }); W.push({ id: e, d });
+      if (record) events.push({ action: 'start', node: e });
+    }
+    while (C.size > 0) {
+      const c = C.pop();
+      const f = W.peek();
+      if (f && c.d > f.d) break;                 // all in W evaluated
+      if (record) events.push({ action: 'expand', node: c.id });
+      const neighbors = this.nodes[c.id].neighbors[lc] || [];
+      for (const e of neighbors) {
+        if (visited.has(e)) continue;
+        visited.add(e);
+        const de = countedDist(q, this.nodes[e].point, counter);
+        const f2 = W.peek();
+        if (record) events.push({ action: 'check', from: c.id, to: e });
+        if (W.size < ef || de < f2.d) {
+          C.push({ id: e, d: de }); W.push({ id: e, d: de });
+          if (record) events.push({ action: 'addcandidate', node: e });
+          if (W.size > ef) W.pop();              // drop furthest
+        }
+      }
+    }
+    const arr = []; while (W.size > 0) arr.push(W.pop());
+    arr.sort((a, b) => a.d - b.d);
+    if (record) return { W: arr, events, visited };
+    return { W: arr, visited };
+  }
+
+  // Algorithm 4: SELECT-NEIGHBORS heuristic
+  // keep e if e is closer to q than to any already-selected r (diversity)
+  selectNeighborsHeuristic(qp, candidates, M) {
+    const W = candidates.slice().sort((a, b) => a.d - b.d);
+    const R = [], Wd = [];
+    for (const e of W) {
+      if (R.length >= M) break;
+      let good = true;
+      for (const r of R) {
+        if (dist2(this.nodes[e.id].point, this.nodes[r.id].point) < e.d) { good = false; break; }
+      }
+      if (good) R.push(e); else Wd.push(e);
+    }
+    // keepPrunedConnections: fill up to M with nearest discarded
+    Wd.sort((a, b) => a.d - b.d);
+    let i = 0; while (i < Wd.length && R.length < M) R.push(Wd[i++]);
+    return R.map(x => x.id);
+  }
+
+  // Algorithm 5: K-NN-SEARCH (records a trace for animation)
+  knnSearch(q, K, ef, record) {
+    let curEp = [this.entryPoint];
+    const L = this.maxLevel;
+    const trace = { entryPoint: this.entryPoint, maxLevel: L, steps: [], distCount: 0 };
+    const counter = { n: 0 };
+    for (let lc = L; lc >= 1; lc--) {
+      const { W, events } = this.searchLayer(q, curEp, 1, lc, counter, record);
+      if (record) trace.steps.push({ layer: lc, events });
+      curEp = [W[0].id];
+    }
+    const { W, events } = this.searchLayer(q, curEp, ef, 0, counter, record);
+    if (record) trace.steps.push({ layer: 0, events });
+    W.sort((a, b) => a.d - b.d);
+    const result = W.slice(0, K).map(x => x.id);
+    trace.distCount = counter.n;
+    trace.finalNeighbors = result;
+    return { result, trace };
+  }
+
+  // Exact baseline — linear scan over every node
+  bruteForceKNN(q, K) {
+    const arr = this.nodes.map(n => ({ id: n.id, d: dist2(q, n.point) }));
+    arr.sort((a, b) => a.d - b.d);
+    return { neighbors: arr.slice(0, K).map(x => x.id), distCount: this.nodes.length };
+  }
+}
+
+/* ============================================================
+   Global state
+   ============================================================ */
+const EF_CONSTRUCTION = 64, K = 10;
+let hnsw, allPoints = [];
+let currentM = 8;
+let activeLayer = 0, viewMode = 'tabs';
+let searchResult = null, animState = null, layerStates = {};
+let efSearch = 50, animSpeed = 5;
+let CSS_W = 680, CSS_H = 680;
+let canvas, ctx;
+const COLORS = {
+  bg: '#0e0e18', edge: '#232339', explored: '#4a8fff',
+  default: '#5a5a7a', visited: '#4a9eff', current: '#ffd23f',
+  entry: '#c77dff', final: '#06d6a0', missed: '#ef476f', query: '#ffffff'
+};
+
+function randPoint() { return [Math.random(), Math.random()]; }
+
+function buildFresh(count, M) {
+  allPoints = [];
+  for (let i = 0; i < count; i++) allPoints.push(randPoint());
+  hnsw = new HNSW(M, EF_CONSTRUCTION);
+  for (const p of allPoints) hnsw.addPoint(p);
+}
+function insertMore(count) {
+  for (let i = 0; i < count; i++) { const p = randPoint(); allPoints.push(p); hnsw.addPoint(p); }
+}
+function rebuildWithM(M) {
+  hnsw = new HNSW(M, EF_CONSTRUCTION);
+  for (const p of allPoints) hnsw.addPoint(p);
+}
+function clearSearch() {
+  searchResult = null; animState = null; layerStates = {};
+  stopAnimation();
+}
+
+/* ============================================================
+   Search execution + animation
+   ============================================================ */
+function runSearch(query) {
+  const { result, trace } = hnsw.knnSearch(query, K, efSearch, true);
+  const brute = hnsw.bruteForceKNN(query, K);
+  const resSet = new Set(result);
+  const trueSet = new Set(brute.neighbors);
+  const hits = result.filter(id => trueSet.has(id)).length;
+  const recall = hits / K;
+  const missed = brute.neighbors.filter(id => !resSet.has(id));
+  searchResult = {
+    query, hnswResult: result, trueNeighbors: brute.neighbors, missed,
+    recall, bruteCount: brute.distCount, hnswCount: trace.distCount, trace, done: false
+  };
+  updateInfo();
+  startAnimation();
+}
+
+function startAnimation() {
+  stopAnimation();
+  layerStates = {};
+  const firstLayer = searchResult.trace.steps[0] ? searchResult.trace.steps[0].layer : 0;
+  animState = { stepIdx: 0, eventIdx: 0, current: null, currentLayer: firstLayer, done: false, playing: true, timer: null };
+  activeLayer = firstLayer; updateTabsActive();
+  animState.timer = setInterval(animTick, 40);
+  setPlayLabel('⏸ Pause');
+}
+function stopAnimation() { if (animState && animState.timer) { clearInterval(animState.timer); animState.timer = null; } }
+function animTick() { for (let i = 0; i < animSpeed; i++) { if (!advanceOne()) break; } draw(); }
+
+function advanceOne() {
+  const steps = searchResult.trace.steps;
+  if (animState.stepIdx >= steps.length) { finishAnimation(); return false; }
+  const step = steps[animState.stepIdx];
+  if (animState.eventIdx >= step.events.length) {
+    animState.stepIdx++; animState.eventIdx = 0;
+    if (animState.stepIdx >= steps.length) { finishAnimation(); return false; }
+    const ns = steps[animState.stepIdx];
+    animState.currentLayer = ns.layer; activeLayer = ns.layer; updateTabsActive();
+    return true;
+  }
+  const ev = step.events[animState.eventIdx++];
+  applyEvent(step.layer, ev);
+  return true;
+}
+function applyEvent(layer, ev) {
+  let ls = layerStates[layer]; if (!ls) layerStates[layer] = { visited: new Set(), exploredEdges: [] };
+  animState.currentLayer = layer;
+  if (ev.action === 'start' || ev.action === 'expand') { ls.visited.add(ev.node); animState.current = ev.node; }
+  else if (ev.action === 'check') { ls.visited.add(ev.to); ls.exploredEdges.push({ from: ev.from, to: ev.to }); }
+  else if (ev.action === 'addcandidate') { ls.visited.add(ev.node); }
+}
+function finishAnimation() {
+  if (animState && !animState.done) {
+    animState.done = true; animState.current = null; searchResult.done = true;
+    stopAnimation(); setPlayLabel('▶ Play'); updateInfo(); draw();
+  }
+}
+function setPlayLabel(t) { document.getElementById('playBtn').textContent = t; }
+
+/* ============================================================
+   Rendering
+   ============================================================ */
+function resizeCanvas() {
+  const dpr = window.devicePixelRatio || 1;
+  let cw = 680, ch = 680;
+  if (viewMode === 'stack' && hnsw) { const layers = hnsw.maxLevel + 1; ch = layers * 210; }
+  CSS_W = cw; CSS_H = ch;
+  canvas.width = cw * dpr; canvas.height = ch * dpr;
+  canvas.style.width = cw + 'px'; canvas.style.height = ch + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+function mapPoint(p, x0, y0, w, h) {
+  const pad = viewMode === 'stack' ? 20 : 35;
+  return { x: x0 + pad + p[0] * (w - 2 * pad), y: y0 + pad + p[1] * (h - 2 * pad) };
+}
+function baseR() { return Math.max(2.2, Math.min(4.5, 30 / Math.sqrt(hnsw.nodes.length))); }
+function countNodesAt(layer) { let c = 0; for (const n of hnsw.nodes) if (n.level >= layer) c++; return c; }
+
+function draw() {
+  if (!hnsw) return;
+  ctx.fillStyle = COLORS.bg; ctx.fillRect(0, 0, CSS_W, CSS_H);
+  if (viewMode === 'tabs') {
+    drawLayerInto(activeLayer, 0, 0, CSS_W, CSS_H);
+    if (!searchResult) {
+      ctx.fillStyle = '#5a5a7a'; ctx.font = '15px sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText('Click anywhere to search for the 10 nearest neighbors', CSS_W / 2, CSS_H - 18);
+      ctx.textAlign = 'left';
+    }
+  } else {
+    const layers = hnsw.maxLevel + 1;
+    const bandH = CSS_H / layers;
+    for (let lc = hnsw.maxLevel; lc >= 0; lc--) {
+      const y0 = (hnsw.maxLevel - lc) * bandH;
+      drawLayerInto(lc, 0, y0, CSS_W, bandH);
+    }
+  }
+}
+
+function drawLayerInto(layer, x0, y0, w, h) {
+  // ---- edges (each unordered pair drawn once) ----
+  const edgeSet = new Set();
+  for (const n of hnsw.nodes) {
+    if (n.level < layer) continue;
+    for (const m of (n.neighbors[layer] || [])) {
+      edgeSet.add(n.id < m ? n.id + '-' + m : m + '-' + n.id);
+    }
+  }
+  ctx.strokeStyle = COLORS.edge; ctx.lineWidth = 0.6;
+  ctx.beginPath();
+  for (const key of edgeSet) {
+    const [a, b] = key.split('-').map(Number);
+    const pa = mapPoint(hnsw.nodes[a].point, x0, y0, w, h);
+    const pb = mapPoint(hnsw.nodes[b].point, x0, y0, w, h);
+    ctx.moveTo(pa.x, pa.y); ctx.lineTo(pb.x, pb.y);
+  }
+  ctx.stroke();
+
+  // ---- explored edges (highlighted) ----
+  const ls = layerStates[layer];
+  if (ls) {
+    ctx.strokeStyle = COLORS.explored; ctx.lineWidth = 1.3;
+    ctx.beginPath();
+    for (const { from, to } of ls.exploredEdges) {
+      const pa = mapPoint(hnsw.nodes[from].point, x0, y0, w, h);
+      const pb = mapPoint(hnsw.nodes[to].point, x0, y0, w, h);
+      ctx.moveTo(pa.x, pa.y); ctx.lineTo(pb.x, pb.y);
+    }
+    ctx.stroke();
+  }
+
+  // ---- nodes ----
+  const r = baseR();
+  for (const n of hnsw.nodes) {
+    if (n.level < layer) continue;
+    const p = mapPoint(n.point, x0, y0, w, h);
+    drawNode(n.id, layer, p.x, p.y, r);
+  }
+
+  // ---- query marker ----
+  if (searchResult) {
+    const qp = mapPoint(searchResult.query, x0, y0, w, h);
+    ctx.strokeStyle = COLORS.query; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(qp.x - 9, qp.y); ctx.lineTo(qp.x + 9, qp.y);
+    ctx.moveTo(qp.x, qp.y - 9); ctx.lineTo(qp.x, qp.y + 9);
+    ctx.stroke();
+    ctx.beginPath(); ctx.arc(qp.x, qp.y, 5, 0, Math.PI * 2); ctx.stroke();
+  }
+
+  // ---- band label / active highlight (stack mode) ----
+  if (viewMode === 'stack') {
+    ctx.fillStyle = '#8a8aa8'; ctx.font = '12px monospace';
+    ctx.fillText(`Layer ${layer} · ${countNodesAt(layer)} nodes`, x0 + 8, y0 + 16);
+    if (searchResult && animState && animState.currentLayer === layer && !animState.done) {
+      ctx.strokeStyle = COLORS.current; ctx.lineWidth = 1.2;
+      ctx.strokeRect(x0 + 1, y0 + 1, w - 2, h - 2);
+    }
+  }
+}
+
+function drawNode(id, layer, x, y, r) {
+  let fill = COLORS.default, rr = r;
+  const ls = layerStates[layer];
+  const done = searchResult && searchResult.done;
+  const isEntry = searchResult && searchResult.trace.entryPoint === id;
+  if (done && layer === 0 && searchResult.missed.includes(id))        { fill = COLORS.missed;  rr = r + 2.5; }
+  else if (done && layer === 0 && searchResult.hnswResult.includes(id)){ fill = COLORS.final;   rr = r + 2;   }
+  else if (animState && !animState.done && animState.currentLayer === layer && animState.current === id) { fill = COLORS.current; rr = r + 2.5; }
+  else if (ls && ls.visited.has(id))                                   { fill = COLORS.visited; rr = r + 0.5; }
+
+  ctx.beginPath(); ctx.arc(x, y, rr, 0, Math.PI * 2); ctx.fillStyle = fill; ctx.fill();
+  if (isEntry) { ctx.strokeStyle = COLORS.entry; ctx.lineWidth = 2; ctx.stroke(); }
+  if (done && layer === 0 && searchResult.missed.includes(id)) {
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.moveTo(x - rr * 0.6, y - rr * 0.6); ctx.lineTo(x + rr * 0.6, y + rr * 0.6);
+    ctx.moveTo(x + rr * 0.6, y - rr * 0.6); ctx.lineTo(x - rr * 0.6, y + rr * 0.6);
+    ctx.stroke();
+  }
+}
+
+/* ============================================================
+   UI wiring
+   ============================================================ */
+function refreshUI() {
+  if (activeLayer > hnsw.maxLevel) activeLayer = hnsw.maxLevel;
+  if (activeLayer < 0) activeLayer = 0;
+  const tabs = document.getElementById('tabs');
+  tabs.innerHTML = '';
+  for (let lc = hnsw.maxLevel; lc >= 0; lc--) {
+    const btn = document.createElement('button');
+    btn.className = 'tab' + (lc === activeLayer ? ' active' : '');
+    btn.textContent = `Layer ${lc} (${countNodesAt(lc)})`;
+    btn.dataset.layer = lc;
+    btn.onclick = () => { activeLayer = lc; updateTabsActive(); draw(); };
+    tabs.appendChild(btn);
+  }
+  tabs.style.display = viewMode === 'tabs' ? '' : 'none';
+  resizeCanvas();
+  updateInfo();
+  draw();
+}
+function updateTabsActive() {
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', +t.dataset.layer === activeLayer));
+}
+function updateInfo() {
+  document.getElementById('pointCount').textContent = hnsw.nodes.length;
+  document.getElementById('layerCount').textContent = hnsw.maxLevel + 1;
+  const recallEl = document.getElementById('recallVal');
+  const hnswEl = document.getElementById('hnswDists');
+  const bruteEl = document.getElementById('bruteDists');
+  const speedupEl = document.getElementById('speedup');
+  const list = document.getElementById('trueList');
+  if (searchResult) {
+    const r = searchResult.recall;
+    recallEl.textContent = r.toFixed(2);
+    recallEl.style.color = r >= 1 ? '#06d6a0' : r >= 0.7 ? '#ffd23f' : '#ef476f';
+    hnswEl.textContent = searchResult.hnswCount;
+    bruteEl.textContent = searchResult.bruteCount;
+    speedupEl.textContent = (searchResult.bruteCount / Math.max(1, searchResult.hnswCount)).toFixed(1) + '×';
+    list.innerHTML = '';
+    searchResult.trueNeighbors.forEach((id, i) => {
+      const found = searchResult.hnswResult.includes(id);
+      const li = document.createElement('li'); li.className = found ? 'found' : 'missed';
+      li.innerHTML = `<span class="rank">${i + 1}</span><span>#${id}</span><span class="mark">${found ? '✓ found' : '✗ missed'}</span>`;
+      list.appendChild(li);
+    });
+  } else {
+    recallEl.textContent = '—'; recallEl.style.color = '#8a8aa8';
+    hnswEl.textContent = '—'; bruteEl.textContent = '—'; speedupEl.textContent = '—';
+    list.innerHTML = '';
+  }
+}
+
+/* ============================================================
+   Init
+   ============================================================ */
+function init() {
+  canvas = document.getElementById('cv');
+  ctx = canvas.getContext('2d');
+  buildFresh(300, currentM);
+  refreshUI();
+
+  document.querySelectorAll('.mbtn').forEach(b => {
+    b.onclick = () => {
+      currentM = +b.dataset.m;
+      document.querySelectorAll('.mbtn').forEach(x => x.classList.toggle('active', x === b));
+      clearSearch(); rebuildWithM(currentM); activeLayer = 0; refreshUI();
+    };
+  });
+  document.getElementById('efSlider').oninput = e => { efSearch = +e.target.value; document.getElementById('efVal').textContent = efSearch; };
+  document.getElementById('speedSlider').oninput = e => { animSpeed = +e.target.value; document.getElementById('speedVal').textContent = animSpeed; };
+  document.getElementById('insertBtn').onclick = () => { clearSearch(); insertMore(100); refreshUI(); };
+  document.getElementById('newBtn').onclick = () => { clearSearch(); buildFresh(300, currentM); activeLayer = 0; refreshUI(); };
+  document.getElementById('viewToggle').onclick = () => {
+    viewMode = viewMode === 'tabs' ? 'stack' : 'tabs';
+    document.getElementById('viewToggle').textContent = viewMode === 'tabs' ? 'View: Tabs' : 'View: Stacked';
+    refreshUI();
+  };
+  document.getElementById('playBtn').onclick = () => {
+    if (!searchResult) return;
+    if (animState.done) { startAnimation(); }
+    else if (animState.playing) { stopAnimation(); animState.playing = false; setPlayLabel('▶ Play'); }
+    else { animState.playing = true; animState.timer = setInterval(animTick, 40); setPlayLabel('⏸ Pause'); }
+  };
+  document.getElementById('stepBtn').onclick = () => {
+    if (!searchResult) return;
+    stopAnimation(); animState.playing = false; setPlayLabel('▶ Play'); advanceOne(); draw();
+  };
+  document.getElementById('replayBtn').onclick = () => { if (searchResult) startAnimation(); };
+
+  canvas.addEventListener('click', e => {
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / rect.width * CSS_W;
+    const y = (e.clientY - rect.top) / rect.height * CSS_H;
+    let px, py;
+    if (viewMode === 'tabs') {
+      const pad = 35;
+      px = (x - pad) / (CSS_W - 2 * pad); py = (y - pad) / (CSS_H - 2 * pad);
+    } else {
+      const layers = hnsw.maxLevel + 1;
+      const bandH = CSS_H / layers;
+      const bandIdx = Math.min(layers - 1, Math.max(0, Math.floor(y / bandH)));
+      const pad = 20, y0 = bandIdx * bandH;
+      px = (x - pad) / (CSS_W - 2 * pad); py = (y - y0 - pad) / (bandH - 2 * pad);
+    }
+    if (px < 0 || px > 1 || py < 0 || py > 1) return;
+    runSearch([px, py]);
+  });
+
+  window.addEventListener('keydown', e => {
+    if (e.target.tagName === 'INPUT') return;
+    if (e.code === 'Space') { e.preventDefault(); document.getElementById('playBtn').click(); }
+    else if (e.code === 'ArrowRight') { document.getElementById('stepBtn').click(); }
+  });
+}
+init();
+</script>
+</body>
+</html>
