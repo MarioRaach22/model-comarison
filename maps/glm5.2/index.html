@@ -175,7 +175,7 @@ const LANG_FAMILY = {
   "Nuristani":"Indo-Iranian","Pamiri":"Indo-Iranian","Dogri":"Indo-Iranian","Maithili":"Indo-Iranian",
   "Saraiki":"Indo-Iranian","Chittagonian":"Indo-Iranian","Sylheti":"Indo-Iranian","Rohingya":"Indo-Iranian",
   "Zazaki":"Indo-Iranian","Gorani":"Indo-Iranian","Tharu":"Indo-Iranian","Farsi":"Indo-Iranian",
-  "Sarnami (Hindustani)":"Indo-Iranian","Gujari":"Indo-Iranian","Kurmanji":"Indo-Iranian",
+  "Sarnami (Hindustani)":"Indo-Iranian","Gujari":"Indo-Iranian","Kurmanji":"Indo-Iranian","Talysh":"Indo-Iranian",
   // Other Indo-European (fine -> group via FAMILY_GROUP)
   "Greek":"Hellenic","Albanian":"Albanian","Armenian":"Armenian","Lithuanian":"Baltic","Latvian":"Baltic",
   "Latgalian":"Baltic","Irish":"Celtic","Welsh":"Celtic","Scottish Gaelic":"Celtic","Breton":"Celtic",
@@ -184,10 +184,10 @@ const LANG_FAMILY = {
   "Arabic":"Semitic","Hebrew":"Semitic","Amharic":"Semitic","Tigrinya":"Semitic","Tigre":"Semitic",
   "Maltese":"Semitic","Neo-Aramaic":"Semitic","Cypriot Arabic":"Semitic","Hassaniya Arabic":"Semitic",
   "Soqotri":"Semitic","Mehri":"Semitic","Syriac":"Semitic","Aramaic":"Semitic","Sa'idi Arabic":"Semitic",
-  "Chadian Arabic":"Semitic","Darija":"Semitic",
+  "Chadian Arabic":"Semitic","Darija":"Semitic","Gurage":"Semitic",
   // Cushitic
   "Somali":"Cushitic","Oromo":"Cushitic","Afar":"Cushitic","Sidamo":"Cushitic","Beja":"Cushitic",
-  "Saho":"Cushitic","Hadiyya":"Cushitic","Wolaytta":"Cushitic","Kambata":"Cushitic","Bilen":"Cushitic","Maay":"Cushitic",
+  "Saho":"Cushitic","Hadiyya":"Cushitic","Wolaytta":"Cushitic","Kambata":"Cushitic","Bilen":"Cushitic","Maay":"Cushitic","Sidama":"Cushitic",
   // Berber
   "Tamazight":"Berber","Tachelhit":"Berber","Kabyle":"Berber","Tarifit":"Berber","Tamasheq":"Berber",
   "Shilha":"Berber","Siwi":"Berber",
@@ -204,6 +204,8 @@ const LANG_FAMILY = {
   "Nyankole":"Bantu","Soga":"Bantu","Ganda":"Bantu","Rwanda":"Bantu","Rundi":"Bantu","Makhuwa":"Bantu",
   "Lunda":"Bantu","Nyanja":"Bantu","Ndau":"Bantu","Manyika":"Bantu","Chaga":"Bantu","Haya":"Bantu",
   "Kalanga":"Bantu","Kgalagadi":"Bantu","Ndowe":"Bantu","Tshiluba":"Bantu","Lugisu":"Bantu","Oshiwambo":"Bantu",
+  "Ewondo":"Bantu","Basaa":"Bantu","Duala":"Bantu","Mbère":"Bantu","Sira":"Bantu","Punu":"Bantu",
+  "Lomwe":"Bantu","Sena":"Bantu",
   "Herero":"Bantu","Tiv":"Niger-Congo",
   // Niger-Congo (non-Bantu)
   "Yoruba":"Niger-Congo","Igbo":"Niger-Congo","Akan":"Niger-Congo","Twi":"Niger-Congo","Fula":"Niger-Congo",
@@ -214,7 +216,7 @@ const LANG_FAMILY = {
   "Mossi":"Niger-Congo","Dagbani":"Niger-Congo","Dagaare":"Niger-Congo","Kasem":"Niger-Congo","Bariba":"Niger-Congo",
   "Frafra":"Niger-Congo","Builsa":"Niger-Congo","Kusaal":"Niger-Congo","Moore":"Niger-Congo","Jola":"Niger-Congo",
   "Serer":"Niger-Congo","Soninke":"Niger-Congo","Maninka":"Niger-Congo","Kabye":"Niger-Congo","Mina":"Niger-Congo",
-  "Gio":"Niger-Congo","Kaba":"Niger-Congo",
+  "Gio":"Niger-Congo","Kaba":"Niger-Congo","Limba":"Niger-Congo","Zande":"Niger-Congo",
   // Nilo-Saharan
   "Dinka":"Nilo-Saharan","Nuer":"Nilo-Saharan","Shilluk":"Nilo-Saharan","Luo":"Nilo-Saharan","Acholi":"Nilo-Saharan",
   "Lango":"Nilo-Saharan","Alur":"Nilo-Saharan","Kalenjin":"Nilo-Saharan","Turkana":"Nilo-Saharan","Songhay":"Nilo-Saharan",
@@ -251,7 +253,7 @@ const LANG_FAMILY = {
   "Chuukese":"Austronesian","Pohnpeian":"Austronesian","Kosraean":"Austronesian","Drehu":"Austronesian",
   "Nengone":"Austronesian","Paicî":"Austronesian","Ajië":"Austronesian","Rapa Nui":"Austronesian",
   "Tolai":"Austronesian","Taman":"Austronesian","Lenakel":"Austronesian","Gela":"Austronesian","Are'are":"Austronesian",
-  "Kwaio":"Austronesian","Indigenous Formosan":"Austronesian","Madurese":"Austronesian","Minangkabau":"Austronesian",
+  "Kwaio":"Austronesian","Indigenous Formosan":"Austronesian","Madurese":"Austronesian","Minangkabau":"Austronesian","Cham":"Austronesian",
   "Tetum":"Austronesian","Mambai":"Austronesian",
   // Austroasiatic
   "Vietnamese":"Austroasiatic","Khmer":"Austroasiatic","Mon":"Austroasiatic","Khasi":"Austroasiatic",
@@ -267,20 +269,21 @@ const LANG_FAMILY = {
   "Komi":"Uralic","Erzya":"Uralic","Moksha":"Uralic","Kven":"Uralic","Meänkieli":"Uralic",
   "Georgian":"Kartvelian","Mingrelian":"Kartvelian","Svan":"Kartvelian","Laz":"Kartvelian",
   // Other / Isolate (fine labels mapped to a group via FAMILY_GROUP)
-  "Basque":"Isolate","Ainu":"Isolate","Burushaski":"Isolate","Warao":"Isolate",
+  "Basque":"Isolate","Ainu":"Isolate","Burushaski":"Isolate","Warao":"Isolate","Chiquitano":"Isolate",
   "Greenlandic":"Eskimo-Aleut","Inuktitut":"Eskimo-Aleut","Kalaallisut":"Eskimo-Aleut",
   "Guaraní":"Tupian","Mapudungun":"Araucanian","Quechua":"Quechuan","Kichwa":"Quechuan","Aymara":"Aymaran",
   "Nahuatl":"Uto-Aztecan","Pipil":"Uto-Aztecan",
   "K'iche'":"Mayan","Q'eqchi'":"Mayan","Kaqchikel":"Mayan","Mam":"Mayan","Tz'utujil":"Mayan","Tzeltal":"Mayan","Mayan languages":"Mayan",
   "Mixtec":"Oto-Manguean","Zapotec":"Oto-Manguean",
   "Wayuu":"Arawakan","Asháninka":"Arawakan","Aguaruna":"Jivaroan","Shipibo":"Panoan","Tukano":"Tucanoan","Yanomami":"Yanomaman",
+  "Shuar":"Jivaroan","Garifuna":"Arawakan","Mojeño":"Arawakan",
   "Embera":"Choco","Paez":"Paezan","Nasa":"Paezan",
   "Bribri":"Chibchan","Cabécar":"Chibchan","Kuna":"Chibchan","Ngäbere":"Chibchan","Rama":"Chibchan",
   "Miskito":"Misumalpan","Sumo":"Misumalpan",
   "Pemón":"Cariban","Kariña":"Cariban","Wai-Wai":"Cariban",
   "Circassian":"Northwest Caucasian","Abkhaz":"Northwest Caucasian",
   "Chechen":"Northeast Caucasian","Ingush":"Northeast Caucasian","Avar":"Northeast Caucasian","Dargin":"Northeast Caucasian","Lezgian":"Northeast Caucasian",
-  "Navajo":"Na-Dene","Hmong-Mien":"Hmong-Mien",
+  "Navajo":"Na-Dene","Hmong-Mien":"Hmong-Mien","Cree":"Algonquian",
   "Enga":"Papuan","Huli":"Papuan","Melpa":"Papuan","Fataluku":"Papuan","Khoekhoe":"Khoe-Kwadi",
   "New Zealand Sign Language":"Sign Language",
   // Creoles & pidgins (group "Other / Isolate")
@@ -289,7 +292,7 @@ const LANG_FAMILY = {
   "Krio":"Creole","Jamaican Patois":"Creole","Belizean Creole":"Creole","Mekatelyu":"Creole",
   "Cameroonian Pidgin English":"Creole","Kituba":"Creole","Sango":"Creole","Chavacano":"Creole","Kriol":"Creole",
   "Guinea-Bissau Creole":"Creole","Guyanese Creole":"Creole","Trinidadian Creole":"Creole","French Creole":"Creole",
-  "Solomon Islands Pijin":"Creole","Maroon Creoles":"Creole","Creole":"Creole"
+  "Solomon Islands Pijin":"Creole","Maroon Creoles":"Creole","Creole":"Creole","Hiri Motu":"Creole"
 };
 
 // Fine family -> color group (identity for groups already in GROUPS).
@@ -302,7 +305,7 @@ const FAMILY_GROUP = {
   "Tucanoan":"Other / Isolate","Yanomaman":"Other / Isolate","Na-Dene":"Other / Isolate","Isolate":"Other / Isolate",
   "Eskimo-Aleut":"Other / Isolate","Hmong-Mien":"Other / Isolate","Papuan":"Other / Isolate",
   "Northwest Caucasian":"Other / Isolate","Northeast Caucasian":"Other / Isolate","Paezan":"Other / Isolate",
-  "Jivaroan":"Other / Isolate","Panoan":"Other / Isolate","Uto-Aztecan":"Other / Isolate","Khoe-Kwadi":"Other / Isolate",
+  "Jivaroan":"Other / Isolate","Panoan":"Other / Isolate","Uto-Aztecan":"Other / Isolate","Khoe-Kwadi":"Other / Isolate","Algonquian":"Other / Isolate",
   "Sign Language":"Other / Isolate"
 };
 
