@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>3D Rubik's Cube</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: radial-gradient(circle at 50% 30%, #2b3252 0%, #14172b 60%, #0b0d1a 100%);
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    color: #fff;
+    overflow: hidden;
+    user-select: none;
+  }
+
+  h1 {
+    font-size: 2rem;
+    letter-spacing: 3px;
+    margin-bottom: 6px;
+    background: linear-gradient(90deg, #ff4d4d, #ffb340, #4dff88, #4dc3ff, #b44dff);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    text-transform: uppercase;
+  }
+
+  #status {
+    height: 24px;
+    font-size: 0.95rem;
+    color: #9aa3c7;
+    margin-bottom: 20px;
+    letter-spacing: 1px;
+  }
+
+  #scene {
+    width: 320px;
+    height: 320px;
+    perspective: 900px;
+    margin-bottom: 34px;
+    cursor: grab;
+  }
+  #scene:active { cursor: grabbing; }
+
+  #cube {
+    width: 100%;
+    height: 100%;
+    position: relative;
+    transform-style: preserve-3d;
+  }
+
+  .cubie {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 90px;
+    height: 90px;
+    margin: -45px 0 0 -45px;
+    transform-style: preserve-3d;
+  }
+
+  .face {
+    position: absolute;
+    inset: 0;
+    background: #101223;            /* cubie plastic body */
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .sticker {
+    width: 78%;
+    height: 78%;
+    border-radius: 8px;
+    box-shadow: inset 0 -6px 10px rgba(0,0,0,0.35),
+                inset 0 4px 8px rgba(255,255,255,0.35),
+                0 0 6px rgba(0,0,0,0.4);
+  }
+
+  #controls { display: flex; gap: 18px; }
+
+  button {
+    padding: 13px 34px;
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: #fff;
+    border: none;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s;
+  }
+  button:hover:not(:disabled) { transform: translateY(-3px) scale(1.04); }
+  button:active:not(:disabled) { transform: translateY(0) scale(0.97); }
+  button:disabled { opacity: 0.45; cursor: not-allowed; filter: grayscale(0.6); }
+
+  #scrambleBtn {
+    background: linear-gradient(135deg, #ff5f6d, #ff9966);
+    box-shadow: 0 6px 18px rgba(255, 95, 109, 0.45);
+  }
+  #solveBtn {
+    background: linear-gradient(135deg, #11998e, #38ef7d);
+    box-shadow: 0 6px 18px rgba(56, 239, 125, 0.4);
+  }
+
+  .hint {
+    margin-top: 18px;
+    font-size: 0.8rem;
+    color: #5c6488;
+    letter-spacing: 1px;
+  }
+</style>
+</head>
+<body>
+
+<h1>Rubik's Cube</h1>
+<div id="status">Ready — drag the cube to inspect it</div>
+
+<div id="scene">
+  <div id="cube"></div>
+</div>
+
+<div id="controls">
+  <button id="scrambleBtn">🔀 Scramble</button>
+  <button id="solveBtn">✅ Solve</button>
+</div>
+<div class="hint">Drag anywhere on the cube to rotate the view</div>
+
+<script>
+(() => {
+  // ---------- Configuration ----------
+  const SIZE = 90;           // cubie size in px
+  const GAP = 8;             // gap between cubies
+  const STEP = SIZE + GAP;   // spacing between cubie centers
+  const HALF = SIZE / 2;
+
+  // Sticker colors per direction (CSS coords: x right, y down, z toward viewer)
+  const COLORS = {
+    'px': '#e53935',  // right  = red
+    'nx': '#ff8f00',  // left   = orange
+    'py': '#fdd835',  // down   = yellow
+    'ny': '#f5f5f5',  // up     = white
+    'pz': '#43a047',  // front  = green
+    'nz': '#1e88e5',  // back   = blue
+  };
+
+  // ---------- Small 3x3 matrix helpers ----------
+  // Matrix stored as [r00,r01,r02, r10,r11,r12, r20,r21,r22] (row-major)
+  const IDENTITY = [1,0,0, 0,1,0, 0,0,1];
+
+  function matMul(a, b) {
+    const r = new Array(9);
+    for (let i = 0; i < 3; i++)
+      for (let j = 0; j < 3; j++)
+        r[i*3+j] = a[i*3]*b[j] + a[i*3+1]*b[3+j] + a[i*3+2]*b[6+j];
+    return r;
+  }
+
+  function matVec(m, v) {
+    return [
+      m[0]*v[0] + m[1]*v[1] + m[2]*v[2],
+      m[3]*v[0] + m[4]*v[1] + m[5]*v[2],
+      m[6]*v[0] + m[7]*v[1] + m[8]*v[2],
+    ];
+  }
+
+  // Rotation matrix about axis ('x'|'y'|'z') by angle in radians
+  function rotMatrix(axis, ang) {
+    const c = Math.cos(ang), s = Math.sin(ang);
+    if (axis === 'x') return [1,0,0, 0,c,-s, 0,s,c];
+    if (axis === 'y') return [c,0,s, 0,1,0, -s,0,c];
+    return [c,-s,0, s,c,0, 0,0,1]; // z
+  }
+
+  const roundMat = m => m.map(v => Math.round(v));
+  const roundVec = v => v.map(x => Math.round(x));
+
+  // ---------- Build the 27 cubies ----------
+  const cubeEl = document.getElementById('cube');
+  const cubies = [];
+
+  const FACES = [
+    { dir: [ 0, 0, 1], key: 'pz', t: `translateZ(${HALF}px)` },
+    { dir: [ 0, 0,-1], key: 'nz', t: `rotateY(180deg) translateZ(${HALF}px)` },
+    { dir: [ 1, 0, 0], key: 'px', t: `rotateY(90deg) translateZ(${HALF}px)` },
+    { dir: [-1, 0, 0], key: 'nx', t: `rotateY(-90deg) translateZ(${HALF}px)` },
+    { dir: [ 0,-1, 0], key: 'ny', t: `rotateX(90deg) translateZ(${HALF}px)` },
+    { dir: [ 0, 1, 0], key: 'py', t: `rotateX(-90deg) translateZ(${HALF}px)` },
+  ];
+
+  for (let x = -1; x <= 1; x++)
+  for (let y = -1; y <= 1; y++)
+  for (let z = -1; z <= 1; z++) {
+    const el = document.createElement('div');
+    el.className = 'cubie';
+
+    for (const f of FACES) {
+      const face = document.createElement('div');
+      face.className = 'face';
+      face.style.transform = f.t;
+      const onSurface =
+        (f.dir[0] !== 0 && f.dir[0] === x) ||
+        (f.dir[1] !== 0 && f.dir[1] === y) ||
+        (f.dir[2] !== 0 && f.dir[2] === z);
+      if (onSurface) {
+        const s = document.createElement('div');
+        s.className = 'sticker';
+        const c = COLORS[f.key];
+        s.style.background = `linear-gradient(135deg, ${c} 0%, ${shade(c, -18)} 100%)`;
+        face.appendChild(s);
+      }
+      el.appendChild(face);
+    }
+
+    cubeEl.appendChild(el);
+    cubies.push({ el, pos: [x, y, z], rot: [...IDENTITY] });
+  }
+
+  function shade(hex, amt) {
+    const n = parseInt(hex.slice(1), 16);
+    const r = Math.max(0, Math.min(255, (n >> 16) + amt));
+    const g = Math.max(0, Math.min(255, ((n >> 8) & 255) + amt));
+    const b = Math.max(0, Math.min(255, (n & 255) + amt));
+    return `rgb(${r},${g},${b})`;
+  }
+
+  function render(cubie, extraMat) {
+    // extraMat: optional pre-rotation (used mid-animation)
+    const rot = extraMat ? matMul(extraMat, cubie.rot) : cubie.rot;
+    const p = extraMat ? matVec(extraMat, cubie.pos) : cubie.pos;
+    const tx = p[0] * STEP, ty = p[1] * STEP, tz = p[2] * STEP;
+    // CSS matrix3d is column-major
+    cubie.el.style.transform =
+      `matrix3d(${rot[0]},${rot[3]},${rot[6]},0,` +
+      `${rot[1]},${rot[4]},${rot[7]},0,` +
+      `${rot[2]},${rot[5]},${rot[8]},0,` +
+      `${tx},${ty},${tz},1)`;
+  }
+
+  function renderAll() { cubies.forEach(c => render(c)); }
+  renderAll();
+
+  // ---------- Move machinery ----------
+  // Face turns: axis + layer coordinate. dir = +1/-1 quarter-turn direction.
+  const MOVES = [
+    { axis: 'x', layer:  1 }, // R
+    { axis: 'x', layer: -1 }, // L
+    { axis: 'y', layer:  1 }, // D
+    { axis: 'y', layer: -1 }, // U
+    { axis: 'z', layer:  1 }, // F
+    { axis: 'z', layer: -1 }, // B
+  ];
+  const axisIndex = { x: 0, y: 1, z: 2 };
+
+  let queue = [];
+  let animating = false;
+  let history = [];   // moves applied since the cube was last solved
+
+  const statusEl = document.getElementById('status');
+  const scrambleBtn = document.getElementById('scrambleBtn');
+  const solveBtn = document.getElementById('solveBtn');
+
+  function easeInOutCubic(t) {
+    return t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t + 2, 3) / 2;
+  }
+
+  function enqueue(move) {
+    queue.push(move);
+    if (!animating) runNext();
+  }
+
+  function runNext() {
+    if (queue.length === 0) {
+      animating = false;
+      updateUI();
+      return;
+    }
+    animating = true;
+    updateUI();
+    const move = queue.shift();
+    animateMove(move, runNext);
+  }
+
+  function animateMove(move, done) {
+    const { axis, layer, dir, duration } = move;
+    const ai = axisIndex[axis];
+    const layerCubies = cubies.filter(c => c.pos[ai] === layer);
+    const totalAngle = dir * Math.PI / 2;
+    const start = performance.now();
+
+    function frame(now) {
+      const t = Math.min(1, (now - start) / duration);
+      const ang = totalAngle * easeInOutCubic(t);
+      const R = rotMatrix(axis, ang);
+      for (const c of layerCubies) render(c, R);
+
+      if (t < 1) {
+        requestAnimationFrame(frame);
+      } else {
+        // Commit exact integer quarter-turn to logical state
+        const Rq = roundMat(rotMatrix(axis, totalAngle));
+        for (const c of layerCubies) {
+          c.rot = roundMat(matMul(Rq, c.rot));
+          c.pos = roundVec(matVec(Rq, c.pos));
+          render(c);
+        }
+        done();
+      }
+    }
+    requestAnimationFrame(frame);
+  }
+
+  function updateUI(solved) {
+    const busy = animating || queue.length > 0;
+    scrambleBtn.disabled = busy;
+    solveBtn.disabled = busy || history.length === 0;
+    if (busy) {
+      statusEl.textContent = queue.length > 1
+        ? `Turning… ${queue.length} move${queue.length > 1 ? 's' : ''} left`
+        : 'Turning…';
+    } else if (solved) {
+      statusEl.textContent = '🎉 Solved! Beautiful.';
+    } else if (history.length > 0) {
+      statusEl.textContent = `Scrambled (${history.length} moves) — hit Solve!`;
+    } else {
+      statusEl.textContent = 'Ready — drag the cube to inspect it';
+    }
+  }
+
+  // ---------- Scramble ----------
+  scrambleBtn.addEventListener('click', () => {
+    const N = 20;
+    let lastAxis = null;
+    for (let i = 0; i < N; i++) {
+      let m;
+      do { m = MOVES[Math.floor(Math.random() * MOVES.length)]; }
+      while (m.axis === lastAxis);
+      lastAxis = m.axis;
+      const dir = Math.random() < 0.5 ? 1 : -1;
+      const move = { axis: m.axis, layer: m.layer, dir, duration: 240 };
+      history.push(move);
+      enqueue(move);
+    }
+  });
+
+  // ---------- Solve (exact inverse replay) ----------
+  solveBtn.addEventListener('click', () => {
+    const inverse = history.reverse().map(m => ({
+      axis: m.axis, layer: m.layer, dir: -m.dir, duration: 130,
+    }));
+    history = [];
+    for (const m of inverse) enqueue(m);
+    // Flag solved state when queue drains
+    const check = setInterval(() => {
+      if (!animating && queue.length === 0) {
+        clearInterval(check);
+        updateUI(true);
+      }
+    }, 100);
+  });
+
+  // ---------- Drag to rotate the whole view ----------
+  let viewX = -26, viewY = -32;   // initial tilt
+  const scene = document.getElementById('scene');
+
+  function applyView() {
+    cubeEl.style.transform = `rotateX(${viewX}deg) rotateY(${viewY}deg)`;
+  }
+  applyView();
+
+  let dragging = false, px = 0, py = 0;
+  scene.addEventListener('pointerdown', e => {
+    dragging = true; px = e.clientX; py = e.clientY;
+    scene.setPointerCapture(e.pointerId);
+  });
+  scene.addEventListener('pointermove', e => {
+    if (!dragging) return;
+    viewY += (e.clientX - px) * 0.5;
+    viewX -= (e.clientY - py) * 0.5;
+    viewX = Math.max(-85, Math.min(85, viewX));
+    px = e.clientX; py = e.clientY;
+    applyView();
+  });
+  scene.addEventListener('pointerup', () => dragging = false);
+  scene.addEventListener('pointercancel', () => dragging = false);
+})();
+</script>
+</body>
+</html>
