@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LiteRT.js — Handwritten Digit Classifier</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: #f0f2f5;
+    color: #1a1a2e;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 2rem;
+  }
+
+  h1 {
+    font-size: 1.6rem;
+    font-weight: 700;
+    margin-bottom: .3rem;
+    letter-spacing: -.02em;
+  }
+
+  .subtitle {
+    font-size: .85rem;
+    color: #666;
+    margin-bottom: 1.5rem;
+    max-width: 440px;
+    text-align: center;
+    line-height: 1.45;
+  }
+
+  .card {
+    background: #fff;
+    border-radius: 16px;
+    box-shadow: 0 2px 16px rgba(0,0,0,.07);
+    padding: 2rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1.25rem;
+    max-width: 400px;
+    width: 100%;
+  }
+
+  canvas#drawing {
+    border: 3px solid #e0e0e0;
+    border-radius: 12px;
+    cursor: crosshair;
+    touch-action: none;
+    background: #fff;
+  }
+
+  .btn-row {
+    display: flex;
+    gap: .75rem;
+    width: 100%;
+  }
+
+  button {
+    flex: 1;
+    padding: .7rem 1rem;
+    border: none;
+    border-radius: 10px;
+    font-size: .95rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background .15s, transform .1s;
+  }
+
+  button:active { transform: scale(.97); }
+
+  button.primary {
+    background: #4f46e5;
+    color: #fff;
+  }
+  button.primary:hover { background: #4338ca; }
+  button.primary:disabled {
+    background: #a5b4fc;
+    cursor: not-allowed;
+  }
+
+  button.secondary {
+    background: #f1f5f9;
+    color: #334155;
+  }
+  button.secondary:hover { background: #e2e8f0; }
+
+  #status {
+    font-size: .85rem;
+    color: #888;
+    min-height: 1.2em;
+    text-align: center;
+  }
+
+  #result {
+    display: flex;
+    align-items: center;
+    gap: .6rem;
+    padding: .85rem 1.2rem;
+    border-radius: 12px;
+    background: #f8fafc;
+    width: 100%;
+    font-size: .95rem;
+    transition: opacity .3s;
+  }
+
+  #result .digit {
+    font-size: 2.8rem;
+    font-weight: 800;
+    line-height: 1;
+    color: #4f46e5;
+    min-width: 2.4rem;
+    text-align: center;
+  }
+
+  #result .detail {
+    flex: 1;
+  }
+
+  #result .detail .label {
+    font-size: .75rem;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+  }
+
+  #result .detail .confidence-bar {
+    height: 6px;
+    border-radius: 3px;
+    background: #e2e8f0;
+    margin-top: 4px;
+    overflow: hidden;
+  }
+
+  #result .detail .confidence-fill {
+    height: 100%;
+    border-radius: 3px;
+    background: #4f46e5;
+    transition: width .3s ease;
+  }
+
+  #top-k {
+    width: 100%;
+    margin-top: .25rem;
+    font-size: .8rem;
+    color: #64748b;
+  }
+
+  #top-k .item {
+    display: flex;
+    justify-content: space-between;
+    padding: 2px 0;
+    border-bottom: 1px solid #f1f5f9;
+  }
+
+  #top-k .bar {
+    height: 4px;
+    border-radius: 2px;
+    background: #e0e7ff;
+    margin: 0 .5rem;
+    flex: 1;
+    max-width: 120px;
+    position: relative;
+  }
+
+  #top-k .bar-fill {
+    height: 100%;
+    border-radius: 2px;
+    background: #818cf8;
+  }
+
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<h1>✍️ Handwritten Digit Classifier</h1>
+<p class="subtitle">
+  Draw a digit (0–9) on the canvas below and click <b>Predict</b>.
+  Runs entirely in your browser with
+  <a href="https://developers.google.com/edge/litert/web" target="_blank">Google LiteRT.js</a>.
+</p>
+
+<div class="card">
+  <canvas id="drawing" width="224" height="224"></canvas>
+
+  <div class="btn-row">
+    <button class="secondary" id="clearBtn">Clear</button>
+    <button class="primary" id="predictBtn" disabled>Predict</button>
+  </div>
+
+  <div id="status">Loading model…</div>
+
+  <div id="result" class="hidden">
+    <div class="digit" id="predDigit">—</div>
+    <div class="detail">
+      <div class="label">Confidence</div>
+      <div class="confidence-bar"><div class="confidence-fill" id="confBar" style="width:0%"></div></div>
+      <div id="predConfidence" style="font-size:.8rem;margin-top:3px;color:#475569">—</div>
+    </div>
+  </div>
+
+  <div id="top-k" class="hidden"></div>
+</div>
+
+<script type="module">
+/* ─────────────────────────────────────────────────────────
+ *  LiteRT.js Handwritten Digit Classifier
+ *
+ *  Model : Jack Perlo – LeNet-5 MNIST (lenet5_int8_mnist.tflite)
+ *         https://huggingface.co/jack-perlo/Lenet5-Mnist
+ *         Apache 2.0
+ *  Input : 1 × 28 × 28 × 1  (grayscale, 0-255 or 0.0-1.0)
+ *  Output: 1 × 10           (softmax logits for digits 0-9)
+ *
+ *  Accelerator : wasm  (XNNPack on WebAssembly / CPU)
+ *                  → No COOP/COEP / SharedArrayBuffer needed
+ *                  → Works on GitHub Pages without custom headers
+ *
+ *  Model source: HuggingFace CDN (CORS-enabled)
+ * ─────────────────────────────────────────────────────────
+ */
+
+import { loadLiteRt, loadAndCompile, Tensor } from
+  'https://cdn.jsdelivr.net/npm/@litertjs/core@2.5.3/+esm';
+
+// ── Config ────────────────────────────────────────────────
+const MODEL_URL = 'https://huggingface.co/jack-perlo/Lenet5-Mnist/resolve/main/lenet5_int8_mnist.tflite';
+const WASM_URL  = 'https://cdn.jsdelivr.net/npm/@litertjs/core@2.5.3/wasm/';
+
+// ── DOM refs ──────────────────────────────────────────────
+const canvas     = document.getElementById('drawing');
+const ctx        = canvas.getContext('2d', { willReadFrequently: true });
+const statusEl   = document.getElementById('status');
+const predictBtn = document.getElementById('predictBtn');
+const clearBtn   = document.getElementById('clearBtn');
+const resultEl   = document.getElementById('result');
+const predDigit  = document.getElementById('predDigit');
+const confBar    = document.getElementById('confBar');
+const predConf   = document.getElementById('predConfidence');
+const topKEl     = document.getElementById('top-k');
+
+// ── Canvas drawing state ──────────────────────────────────
+let painting = false;
+const WHITE = '#FFFFFF';
+const BLACK = '#000000';
+
+canvas.addEventListener('pointerdown',  e => { painting = true; ctx.beginPath(); draw(e); });
+canvas.addEventListener('pointermove',  draw);
+canvas.addEventListener('pointerup',    ()  => { painting = false; ctx.closePath(); });
+canvas.addEventListener('pointerleave', ()  => { painting = false; ctx.closePath(); });
+
+function draw(e) {
+  if (!painting) return;
+  const rect = canvas.getBoundingClientRect();
+  const x = (e.clientX - rect.left) * (canvas.width  / rect.width);
+  const y = (e.clientY - rect.top)  * (canvas.height / rect.height);
+  ctx.lineWidth   = 18;
+  ctx.lineCap     = 'round';
+  ctx.lineJoin    = 'round';
+  ctx.strokeStyle = BLACK;
+  ctx.lineTo(x, y);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+}
+
+// ── Helpers ───────────────────────────────────────────────
+function softmax(arr) {
+  const m = Math.max(...arr);
+  const exps = arr.map(v => Math.exp(v - m));
+  const sum  = exps.reduce((a, b) => a + b, 0);
+  return exps.map(e => e / sum);
+}
+
+function getTopK(probs, k) {
+  const indexed = probs.map((p, i) => ({ idx: i, prob: p }));
+  indexed.sort((a, b) => b.prob - a.prob);
+  return indexed.slice(0, k);
+}
+
+// ── Prepare input image for the model ────────────────────
+// The canvas is 224×224. We resize the drawn content to 28×28,
+// then normalize. The dtype (Float32Array vs Uint8Array) depends
+// on the model's input tensor type, which is inspected after loading.
+function getImageTensor(dtype) {
+  const tempCanvas = document.createElement('canvas');
+  tempCanvas.width  = 28;
+  tempCanvas.height = 28;
+  const tempCtx = tempCanvas.getContext('2d');
+
+  // Draw the canvas content scaled down to 28×28
+  tempCtx.fillStyle = WHITE;
+  tempCtx.fillRect(0, 0, 28, 28);
+  tempCtx.drawImage(canvas, 0, 0, 28, 28);
+
+  const imageData = tempCtx.getImageData(0, 0, 28, 28);
+  const pixels = imageData.data;
+  const total = 1 * 28 * 28 * 1;
+
+  // TFLite tensor types: 1=float32, 3=int32, 5=uint8, 6=int8
+  if (dtype === 1) {
+    // Float32 input: values in [0, 1] — 0 = white (bg), 1 = black (digit)
+    const arr = new Float32Array(total);
+    for (let i = 0; i < total; i++) arr[i] = (255 - pixels[i * 4]) / 255;
+    return arr;
+  } else {
+    // uint8 or int8 input: raw 0-255 pixel values
+    // TFLite uint8 tensors are typically [0, 255] with scale=1, zp=0
+    const arr = new Uint8Array(total);
+    for (let i = 0; i < total; i++) arr[i] = 255 - pixels[i * 4];
+    return arr;
+  }
+}
+
+// ── Update UI with prediction ─────────────────────────────
+function showPrediction(probs) {
+  const top = getTopK(probs, 5);
+  const best = top[0];
+
+  resultEl.classList.remove('hidden');
+  predDigit.textContent = best.idx;
+  confBar.style.width   = (best.prob * 100).toFixed(1) + '%';
+  predConf.textContent  = (best.prob * 100).toFixed(1) + '%';
+
+  // Top-5 list
+  topKEl.innerHTML = top.map(t => {
+    const pct = (t.prob * 100).toFixed(1);
+    return `<div class="item">
+      <span style="min-width:1.5rem;font-weight:600">${t.idx}</span>
+      <span class="bar"><span class="bar-fill" style="width:${pct}%"></span></span>
+      <span style="min-width:3rem;text-align:right">${pct}%</span>
+    </div>`;
+  }).join('');
+  topKEl.classList.remove('hidden');
+}
+
+function showError(msg) {
+  statusEl.textContent = msg;
+  statusEl.style.color = '#dc2626';
+}
+
+// ── Main: load model & run inference ──────────────────────
+let model = null;
+let inputShape  = null;
+let inputDtype  = null;
+let outputShape = null;
+
+async function init() {
+  try {
+    statusEl.textContent = 'Loading LiteRT.js runtime …';
+
+    // 1. Load WASM files
+    await loadLiteRt(WASM_URL);
+
+    // 2. Load & compile model with wasm accelerator (CPU, no COOP/COEP)
+    statusEl.textContent = 'Compiling model (this may take a moment) …';
+    model = await loadAndCompile(MODEL_URL, { accelerator: 'wasm' });
+
+    // 3. Inspect model I/O details
+    const inputDetails  = model.getInputDetails();
+    const outputDetails = model.getOutputDetails();
+
+    if (inputDetails.length === 0) throw new Error('Model has no input tensors');
+    if (outputDetails.length === 0) throw new Error('Model has no output tensors');
+
+    inputShape  = inputDetails[0].shape;
+    inputDtype  = inputDetails[0].dtype;
+    outputShape = outputDetails[0].shape;
+
+    console.log('Model loaded.', 'Input:', inputDetails[0], 'Output:', outputDetails[0]);
+    console.log('  Input dtype:', inputDtype, '(1=float32, 3=int32, 5=uint8, 6=int8)');
+
+    // 4. Enable predict button
+    predictBtn.disabled = false;
+    statusEl.textContent = 'Draw a digit and click Predict';
+    statusEl.style.color = '#888';
+
+  } catch (err) {
+    console.error('Initialization failed:', err);
+    showError('Failed to load model: ' + err.message);
+    predictBtn.disabled = true;
+  }
+}
+
+async function predict() {
+  // Ensure canvas has something drawn
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const hasDrawing = imageData.data.some((v, i) => i % 4 === 0 && v < 240); // non-white pixel
+  if (!hasDrawing) {
+    statusEl.textContent = 'Please draw a digit first!';
+    statusEl.style.color = '#f59e0b';
+    return;
+  }
+
+  statusEl.textContent = 'Running inference …';
+  statusEl.style.color = '#4f46e5';
+  predictBtn.disabled = true;
+  resultEl.classList.add('hidden');
+  topKEl.classList.add('hidden');
+
+  try {
+    // Get input tensor from canvas (dtype-aware)
+    const inputTensor = new Tensor(getImageTensor(inputDtype), inputShape);
+
+    // Run inference
+    const results = await model.run(inputTensor);
+
+    // Move output to wasm and read
+    const output = await results[0].moveTo('wasm');
+    const raw = output.toTypedArray();
+
+    // Clean up tensors (LiteRT.js uses manual memory management)
+    inputTensor.delete();
+    output.delete();
+    results.delete();
+
+    // Handle different output shapes:
+    // If [1, 10] → flatten to [10]
+    // If [10]    → use as-is
+    let probs;
+    if (outputShape.length === 2 && outputShape[0] === 1) {
+      probs = Array.from(raw).slice(1);
+    } else {
+      probs = Array.from(raw);
+    }
+
+    showPrediction(probs);
+    statusEl.textContent = 'Done — try another digit!';
+    statusEl.style.color = '#22c55e';
+
+  } catch (err) {
+    console.error('Inference failed:', err);
+    showError('Inference error: ' + err.message);
+    statusEl.style.color = '#dc2626';
+  } finally {
+    predictBtn.disabled = false;
+  }
+}
+
+// ── Event listeners ───────────────────────────────────────
+clearBtn.addEventListener('click', () => {
+  ctx.fillStyle = WHITE;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  resultEl.classList.add('hidden');
+  topKEl.classList.add('hidden');
+  statusEl.textContent = 'Canvas cleared';
+  statusEl.style.color = '#888';
+});
+
+predictBtn.addEventListener('click', predict);
+
+// ── Boot ──────────────────────────────────────────────────
+init();
+</script>
+</body>
+</html>

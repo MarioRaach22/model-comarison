@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MNIST Digit Classifier — LiteRT.js</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #f4f5f7;
+      color: #1a1a2e;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+      padding: 2rem 1rem;
+      gap: 1.25rem;
+    }
+
+    h1 { font-size: 1.7rem; font-weight: 800; color: #16213e; letter-spacing: -0.02em; }
+    .subtitle { font-size: 0.82rem; color: #666; margin-top: -0.5rem; }
+
+    .canvas-wrapper {
+      position: relative;
+      border: 3px solid #16213e;
+      border-radius: 10px;
+      overflow: hidden;
+      box-shadow: 0 6px 24px rgba(22,33,62,0.18);
+    }
+
+    canvas {
+      display: block;
+      background: #fff;
+      cursor: crosshair;
+      touch-action: none;
+    }
+
+    .canvas-hint {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 0.9rem;
+      color: #ccc;
+      pointer-events: none;
+      user-select: none;
+      transition: opacity 0.25s;
+    }
+    .canvas-hint.hidden { opacity: 0; }
+
+    .controls { display: flex; gap: 0.75rem; }
+
+    button {
+      padding: 0.65rem 1.8rem;
+      font-size: 0.95rem;
+      font-weight: 700;
+      border: none;
+      border-radius: 7px;
+      cursor: pointer;
+      transition: transform 0.1s, background 0.15s, opacity 0.15s;
+    }
+    button:active { transform: scale(0.95); }
+    #predictBtn { background: #16213e; color: #fff; }
+    #predictBtn:hover:not(:disabled) { background: #1e2d52; }
+    #clearBtn { background: #e4e4e4; color: #333; }
+    #clearBtn:hover { background: #d4d4d4; }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    .result-panel {
+      display: flex;
+      align-items: center;
+      gap: 1.5rem;
+      background: #fff;
+      border: 1.5px solid #ddd;
+      border-radius: 10px;
+      padding: 1rem 1.6rem;
+      min-width: 360px;
+      box-shadow: 0 3px 14px rgba(0,0,0,0.07);
+    }
+
+    .digit-display {
+      font-size: 4rem;
+      font-weight: 900;
+      color: #16213e;
+      line-height: 1;
+      min-width: 3.5rem;
+      text-align: center;
+    }
+
+    .conf-block { display: flex; flex-direction: column; gap: 0.35rem; }
+    .conf-label { font-size: 0.7rem; color: #999; text-transform: uppercase; letter-spacing: 0.06em; }
+    .conf-value { font-size: 1.15rem; font-weight: 800; color: #27ae60; }
+    .bar-bg { width: 130px; height: 7px; background: #eee; border-radius: 4px; overflow: hidden; }
+    .bar-fill { height: 100%; background: linear-gradient(90deg,#27ae60,#2ecc71); border-radius: 4px; width: 0%; transition: width 0.45s ease-out; }
+    .bar-ends { display: flex; justify-content: space-between; width: 130px; font-size: 0.62rem; color: #bbb; }
+
+    .hidden { display: none !important; }
+
+    #statusMsg { font-size: 0.82rem; color: #777; text-align: center; min-height: 1.2em; }
+    #statusMsg.error { color: #e74c3c; }
+    #statusMsg.ok    { color: #27ae60; }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner {
+      display: inline-block; width: 13px; height: 13px;
+      border: 2px solid #ccc; border-top-color: #16213e;
+      border-radius: 50%; animation: spin 0.65s linear infinite;
+      vertical-align: middle; margin-right: 5px;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>MNIST Digit Classifier</h1>
+  <p class="subtitle">Powered by LiteRT.js — inference runs entirely in your browser</p>
+
+  <div class="canvas-wrapper">
+    <canvas id="drawCanvas" width="280" height="280"></canvas>
+    <span class="canvas-hint" id="canvasHint">Draw a digit here</span>
+  </div>
+
+  <div class="controls">
+    <button id="predictBtn">Predict</button>
+    <button id="clearBtn">Clear</button>
+  </div>
+
+  <div id="statusMsg">Initialising…</div>
+
+  <div class="result-panel hidden" id="resultPanel">
+    <div class="digit-display" id="digitDisplay">?</div>
+    <div class="conf-block">
+      <span class="conf-label">Confidence</span>
+      <span class="conf-value" id="confValueEl">—</span>
+      <div class="bar-bg"><div class="bar-fill" id="confBarFill"></div></div>
+      <div class="bar-ends"><span>0%</span><span>100%</span></div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { loadLiteRt, loadAndCompile, Tensor } from
+      'https://cdn.jsdelivr.net/npm/@litertjs/core@2.5.3/+esm';
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Model URL
+    //  Model:  jack-perlo/Lenet5-Mnist  (HuggingFace, Apache 2.0)
+    //  File:   lenet5_int8_mnist.tflite  (~73 KB)
+    //  I/O:    input  [1, 1, 28, 28] INT8  (NCHW grayscale)
+    //          output [1, 10]         INT8  (logits, argmax = digit)
+    //  URL uses hf.co shortener + ?download=true, which redirects to a
+    //  CloudFront URL that has CORS headers (access-control-allow-origin: *).
+    // ══════════════════════════════════════════════════════════════════════════
+    const MODEL_URL =
+      'https://hf.co/jack-perlo/Lenet5-Mnist/resolve/main/lenet5_int8_mnist.tflite?download=true';
+
+    // Canvas / model resolution mapping
+    const CANVAS_PX = 280;
+    const MODEL_PX  = 28;   // MNIST standard
+    const SCALE     = CANVAS_PX / MODEL_PX;   // 10 px per MNIST pixel
+
+    // ── DOM ─────────────────────────────────────────────────────────────────
+    const canvas       = document.getElementById('drawCanvas');
+    const ctx         = canvas.getContext('2d');
+    const hint        = document.getElementById('canvasHint');
+    const predictBtn  = document.getElementById('predictBtn');
+    const clearBtn    = document.getElementById('clearBtn');
+    const statusEl    = document.getElementById('statusMsg');
+    const resultPanel = document.getElementById('resultPanel');
+    const digitEl    = document.getElementById('digitDisplay');
+    const confValueEl = document.getElementById('confValueEl');
+    const confBarEl  = document.getElementById('confBarFill');
+
+    // ── State ────────────────────────────────────────────────────────────────
+    let model    = null;
+    let litert   = null;
+    let isDrawing = false;
+    let drawn    = false;
+
+    // ── Status helpers ───────────────────────────────────────────────────────
+    function setStatus(msg, cls = '') {
+      statusEl.textContent = msg;
+      statusEl.className   = cls;
+    }
+
+    function busy(phase) {
+      predictBtn.disabled = true;
+      const spin = '<span class="spinner"></span>';
+      const msgs = {
+        runtime: spin + 'Loading LiteRT runtime…',
+        model:   spin + 'Fetching model…',
+        infer:   spin + 'Running inference…',
+      };
+      setStatus(msgs[phase] || spin + phase, '');
+    }
+
+    function idle() { predictBtn.disabled = !model; }
+
+    function showResult(digit, conf) {
+      resultPanel.classList.remove('hidden');
+      digitEl.textContent    = digit;
+      const pct = (conf * 100).toFixed(1);
+      confValueEl.textContent = pct + '%';
+      confBarEl.style.width   = pct + '%';
+    }
+
+    function hideResult() { resultPanel.classList.add('hidden'); }
+
+    // ── Canvas drawing ───────────────────────────────────────────────────────
+    function resetCanvas() {
+      ctx.fillStyle   = '#fff';
+      ctx.fillRect(0, 0, CANVAS_PX, CANVAS_PX);
+      ctx.strokeStyle = '#000';
+      ctx.lineWidth   = SCALE;       // 10 px = 1 MNIST pixel
+      ctx.lineCap     = 'round';
+      ctx.lineJoin    = 'round';
+      drawn = false;
+      hint.classList.remove('hidden');
+      hideResult();
+    }
+
+    function clientToCanvas(e) {
+      const r  = canvas.getBoundingClientRect();
+      const sx = CANVAS_PX / r.width;
+      const sy = CANVAS_PX / r.height;
+      const cx = e.touches ? e.touches[0].clientX : e.clientX;
+      const cy = e.touches ? e.touches[0].clientY : e.clientY;
+      return { x: (cx - r.left) * sx, y: (cy - r.top) * sy };
+    }
+
+    canvas.addEventListener('mousedown', e => {
+      isDrawing = true;
+      const p = { x: e.offsetX, y: e.offsetY };
+      ctx.beginPath(); ctx.moveTo(p.x, p.y);
+    });
+    canvas.addEventListener('mousemove', e => {
+      if (!isDrawing) return;
+      ctx.lineTo(e.offsetX, e.offsetY); ctx.stroke();
+      if (!drawn) { drawn = true; hint.classList.add('hidden'); }
+    });
+    canvas.addEventListener('mouseup',    () => { isDrawing = false; });
+    canvas.addEventListener('mouseleave', () => { isDrawing = false; });
+
+    canvas.addEventListener('touchstart', e => {
+      e.preventDefault(); isDrawing = true;
+      const p = clientToCanvas(e);
+      ctx.beginPath(); ctx.moveTo(p.x, p.y);
+    }, { passive: false });
+    canvas.addEventListener('touchmove', e => {
+      e.preventDefault();
+      if (!isDrawing) return;
+      const p = clientToCanvas(e);
+      ctx.lineTo(p.x, p.y); ctx.stroke();
+      if (!drawn) { drawn = true; hint.classList.add('hidden'); }
+    }, { passive: false });
+    canvas.addEventListener('touchend', () => { isDrawing = false; });
+
+    clearBtn.addEventListener('click', resetCanvas);
+
+    // ── Image preprocessing ──────────────────────────────────────────────────
+    /**
+     * Returns a Uint8Array of grayscale pixels from the canvas, resized to
+     * 28×28.  Layout matches NCHW [1, 1, 28, 28]:
+     *   buf[i] = pixel at (row = i / 28, col = i % 28)
+     *
+     * Zero-point for the int8 model is 0; raw pixel values (0–255) are used
+     * directly.
+     */
+    function canvasToGrayscale() {
+      const oc = document.createElement('canvas');
+      oc.width  = MODEL_PX;
+      oc.height = MODEL_PX;
+      oc.getContext('2d').drawImage(canvas, 0, 0, MODEL_PX, MODEL_PX);
+
+      const imgData = oc.getContext('2d').getImageData(0, 0, MODEL_PX, MODEL_PX);
+      const px      = imgData.data;  // RGBA, row-major
+      const buf     = new Uint8Array(MODEL_PX * MODEL_PX);  // 784 bytes
+
+      for (let i = 0; i < MODEL_PX * MODEL_PX; i++) {
+        buf[i] = px[i * 4];  // use red channel as grayscale
+      }
+      return buf;
+    }
+
+    // ── Inference ────────────────────────────────────────────────────────────
+    async function runPrediction() {
+      if (!model)  { setStatus('Model not ready — please wait', 'error'); return; }
+      if (!drawn)  { setStatus('Draw a digit first', 'error');           return; }
+
+      hideResult();
+      busy('infer');
+
+      try {
+        // Build input tensor: INT8, NCHW shape [1, 1, 28, 28]
+        const pixels = canvasToGrayscale();
+        const input  = new Tensor(pixels, [1, 1, MODEL_PX, MODEL_PX]);
+
+        // Run model
+        // model.run() returns Promise<Tensor[]>.  Delete the input after use.
+        const outputs = await model.run(input);
+        input.delete();
+
+        // Read output: shape [1, 10] INT8 logits.  With accelerator='wasm'
+        // the tensor buffer is in HOST_MEMORY, so toTypedArray() works directly.
+        const probs = await outputs[0].toTypedArray();   // Float32Array(10)
+
+        // Clean up output tensors (EmscriptenVector-backed; iterate & delete)
+        for (const t of outputs) t.delete();
+        outputs.delete();
+
+        // Argmax + softmax confidence
+        const maxLogit = Math.max(...probs);
+        const exps     = probs.map(v => Math.exp((v - maxLogit) / 128));
+        const sumExp   = exps.reduce((a, b) => a + b, 0);
+
+        let best = 0, bestConf = -Infinity;
+        for (let i = 0; i < 10; i++) {
+          const c = exps[i] / sumExp;
+          if (c > bestConf) { bestConf = c; best = i; }
+        }
+
+        showResult(best, bestConf);
+        setStatus('Done', 'ok');
+      } catch (err) {
+        console.error('[prediction]', err);
+        setStatus('Error: ' + err.message, 'error');
+      } finally {
+        idle();
+      }
+    }
+
+    predictBtn.addEventListener('click', runPrediction);
+
+    // ── LiteRT.js initialisation ────────────────────────────────────────────
+    async function init() {
+      busy('runtime');
+      try {
+        // 1. Load the Wasm runtime files from jsDelivr CDN.
+        //    loadLiteRt() auto-selects the correct JS/Wasm pair:
+        //      - litert_wasm_internal.js + .wasm   (standard single-threaded)
+        //      - litert_wasm_compat_internal.wasm  (fallback for older browsers)
+        //    No index.html in the wasm/ directory is needed; jsDelivr's HTTP
+        //    redirect to a directory-browse page would break dynamic import,
+        //    but loadLiteRt() resolves filenames explicitly, so it's safe.
+        //
+        // 2. Accelerator 'wasm' = XNNPack Wasm.  No COOP/COEP required,
+        //    no SharedArrayBuffer needed.  Works on any static-host
+        //    (including GitHub Pages) without custom headers.
+        litert = await loadLiteRt(
+          'https://cdn.jsdelivr.net/npm/@litertjs/core@2.5.3/wasm/'
+        );
+
+        // 3. Fetch & compile the .tflite model.
+        //    loadAndCompile() handles the HTTP fetch internally.
+        //    The hf.co URL returns CORS headers (access-control-allow-origin: *),
+        //    so the cross-origin fetch succeeds from any origin.
+        busy('model');
+        model = await loadAndCompile(MODEL_URL, { accelerator: 'wasm' });
+
+        // Log I/O shapes for debug verification
+        const inp = model.getInputDetails();
+        const out = model.getOutputDetails();
+        console.log('[LiteRT] Input  →', inp);
+        console.log('[LiteRT] Output →', out);
+
+        setStatus('Ready — draw a digit', 'ok');
+      } catch (err) {
+        console.error('[LiteRT init]', err);
+        setStatus('Init failed: ' + err.message, 'error');
+      } finally {
+        idle();
+      }
+    }
+
+    // Global unhandled-rejection guard
+    window.addEventListener('unhandledrejection', e => {
+      console.error('[unhandled rejection]', e.reason);
+      setStatus('An internal error occurred — check the browser console.', 'error');
+      e.preventDefault();
+    });
+
+    resetCanvas();
+    init();
+  </script>
+</body>
+</html>

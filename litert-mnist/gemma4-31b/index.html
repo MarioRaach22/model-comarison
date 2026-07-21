@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LiteRT.js MNIST Demo</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            background-color: #f0f2f5;
+            color: #1c1e21;
+        }
+        .container {
+            background: white;
+            padding: 2rem;
+            border-radius: 16px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        canvas {
+            border: 2px solid #333;
+            background-color: black;
+            cursor: crosshair;
+            border-radius: 4px;
+            touch-action: none;
+        }
+        .controls {
+            margin-top: 1rem;
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 1rem;
+            cursor: pointer;
+            border: none;
+            border-radius: 8px;
+            transition: opacity 0.2s;
+        }
+        #predict-btn { background-color: #007bff; color: white; font-weight: bold; }
+        #clear-btn { background-color: #6c757d; color: white; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        #result {
+            margin-top: 1.5rem;
+            font-size: 1.5rem;
+            font-weight: bold;
+            min-height: 1.8rem;
+        }
+        .status {
+            font-size: 0.8rem;
+            color: #666;
+            margin-bottom: 1rem;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2 style="margin-top:0">Handwritten Digit Classifier</h2>
+    <div id="status" class="status">Initializing LiteRT...</div>
+    <canvas id="canvas" width="280" height="280"></canvas>
+    <div class="controls">
+        <button id="predict-btn" disabled>Predict</button>
+        <button id="clear-btn">Clear</button>
+    </div>
+    <div id="result"></div>
+</div>
+
+<script type="module">
+    import { loadLiteRt, loadAndCompile, Tensor } from 'https://cdn.jsdelivr.net/npm/@litertjs/core/+esm';
+
+    // Using a public MNIST model from Hugging Face. 
+    // This specific model is a quantized LeNet5.
+    const MODEL_URL = 'https://huggingface.co/jack-perlo/Lenet5-Mnist/resolve/main/lenet5_int8_mnist.tflite';
+    const WASM_URL = 'https://cdn.jsdelivr.net/npm/@litertjs/core/wasm/';
+
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    const predictBtn = document.getElementById('predict-btn');
+    const clearBtn = document.getElementById('clear-btn');
+    const resultDiv = document.getElementById('result');
+    const statusDiv = document.getElementById('status');
+
+    let isDrawing = false;
+    let model = null;
+
+    // Setup Canvas
+    ctx.strokeStyle = 'white';
+    ctx.lineWidth = 20;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    const startDrawing = (e) => {
+        isDrawing = true;
+        draw(e);
+    };
+    const stopDrawing = () => {
+        isDrawing = false;
+        ctx.beginPath();
+    };
+    const draw = (e) => {
+        if (!isDrawing) return;
+        const rect = canvas.getBoundingClientRect();
+        const clientX = e.clientX || (e.touches && e.touches[0].clientX);
+        const clientY = e.clientY || (e.touches && e.touches[0].clientY);
+        const x = clientX - rect.left;
+        const y = clientY - rect.top;
+        ctx.lineTo(x, y);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+    };
+
+    canvas.addEventListener('mousedown', startDrawing);
+    canvas.addEventListener('mousemove', draw);
+    window.addEventListener('mouseup', stopDrawing);
+    canvas.addEventListener('touchstart', startDrawing);
+    canvas.addEventListener('touchmove', draw);
+    window.addEventListener('touchend', stopDrawing);
+
+    clearBtn.onclick = () => {
+        ctx.fillStyle = 'black';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        resultDiv.textContent = '';
+    };
+    
+    // Initialize background
+    ctx.fillStyle = 'black';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    async function init() {
+        try {
+            await loadLiteRt(WASM_URL);
+            statusDiv.textContent = 'Loading model...';
+            
+            // 'wasm' accelerator is used for maximum compatibility and no COOP/COEP requirements.
+            model = await loadAndCompile(MODEL_URL, { accelerator: 'wasm' });
+            
+            statusDiv.textContent = 'Ready!';
+            predictBtn.disabled = false;
+        } catch (e) {
+            console.error('Init error:', e);
+            statusDiv.textContent = 'Initialization failed: ' + e.message;
+        }
+    }
+
+    async function predict() {
+        if (!model) return;
+
+        // Pre-process: Extract 28x28 grayscale pixels
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = 28;
+        tempCanvas.height = 28;
+        const tempCtx = tempCanvas.getContext('2d');
+        
+        tempCtx.drawImage(canvas, 0, 0, 280, 280, 0, 0, 28, 28);
+        const imgData = tempCtx.getImageData(0, 0, 28, 28);
+        
+        // LiteRT.js handles Float32 input for quantized models if the runtime supports the op conversion,
+        // otherwise we provide the normalized [0, 1] range.
+        const inputData = new Float32Array(28 * 28);
+        for (let i = 0; i < imgData.data.length; i += 4) {
+            // Use average of RGB as grayscale value
+            const avg = (imgData.data[i] + imgData.data[i+1] + imgData.data[i+2]) / 3;
+            inputData[i / 4] = avg / 255.0;
+        }
+
+        // Shape: [batch, height, width, channels]
+        const inputTensor = new Tensor(inputData, [1, 28, 28, 1]);
+
+        try {
+            const results = await model.run(inputTensor);
+            const outputTensor = await results[0].moveTo('wasm');
+            const probs = outputTensor.toTypedArray();
+
+            let maxIdx = 0;
+            let maxVal = -Infinity;
+            for (let i = 0; i < probs.length; i++) {
+                if (probs[i] > maxVal) {
+                    maxVal = probs[i];
+                    maxIdx = i;
+                }
+            }
+
+            // Probabilities might be raw logits or softmaxed. 
+            // For a simple demo, we show the index and the raw value (or confidence if formatted).
+            const confidence = (maxVal > 1 ? 'N/A' : (maxVal * 100).toFixed(1));
+            resultDiv.textContent = `Prediction: ${maxIdx} (${confidence}%)`;
+
+            outputTensor.delete();
+            results.delete();
+        } catch (e) {
+            console.error('Inference error:', e);
+            resultDiv.textContent = 'Inference failed';
+        } finally {
+            inputTensor.delete();
+        }
+    }
+
+    predictBtn.onclick = predict;
+    init();
+</script>
+</body>
+</html>

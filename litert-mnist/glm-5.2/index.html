@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MNIST Digit Classifier — LiteRT.js</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --panel-2: #1f232c;
+    --ink: #e8ecf3;
+    --muted: #8b93a3;
+    --accent: #4f8cff;
+    --good: #3ddc84;
+    --bad: #ff6b6b;
+    --grid: #2a2f3a;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: radial-gradient(1200px 600px at 70% -10%, #1b2030 0%, var(--bg) 60%);
+    color: var(--ink);
+    font: 15px/1.5 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+    min-height: 100vh;
+    padding: 24px 16px 48px;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; }
+  header h1 { margin: 0 0 4px; font-size: 22px; letter-spacing: .2px; }
+  header p { margin: 0 0 18px; color: var(--muted); font-size: 13px; }
+  .card {
+    background: linear-gradient(180deg, var(--panel) 0%, var(--panel-2) 100%);
+    border: 1px solid var(--grid);
+    border-radius: 14px;
+    padding: 18px;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    gap: 18px;
+    align-items: start;
+  }
+  @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } }
+
+  .drawcol { display: flex; flex-direction: column; gap: 12px; }
+  .canvas-frame {
+    background: #fff;
+    border-radius: 12px;
+    padding: 10px;
+    box-shadow: inset 0 0 0 1px var(--grid);
+  }
+  #canvas {
+    display: block;
+    width: 300px;
+    height: 300px;
+    border-radius: 8px;
+    background: #fff;
+    touch-action: none;
+    cursor: crosshair;
+    image-rendering: auto;
+  }
+  .controls { display: flex; gap: 10px; flex-wrap: wrap; }
+  button {
+    flex: 1 1 auto;
+    appearance: none;
+    border: 1px solid var(--grid);
+    background: var(--panel-2);
+    color: var(--ink);
+    padding: 11px 14px;
+    border-radius: 9px;
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform .04s ease, background .15s ease, opacity .15s ease;
+  }
+  button:hover:not(:disabled) { background: #272c37; }
+  button:active:not(:disabled) { transform: translateY(1px); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  #predictBtn { background: var(--accent); border-color: transparent; color: #fff; }
+  #predictBtn:hover:not(:disabled) { background: #3d7af0; }
+
+  .status {
+    font-size: 12.5px;
+    color: var(--muted);
+    min-height: 1.2em;
+    word-break: break-word;
+  }
+  .status.error { color: var(--bad); }
+  .status.ok { color: var(--good); }
+
+  .rescol { display: flex; flex-direction: column; gap: 14px; }
+  .result-top { display: flex; align-items: center; gap: 18px; }
+  .digit {
+    width: 96px; height: 96px;
+    border-radius: 14px;
+    background: #0c0e12;
+    border: 1px solid var(--grid);
+    display: grid; place-items: center;
+    font-size: 60px; font-weight: 700;
+    color: var(--muted);
+    flex: 0 0 auto;
+  }
+  .digit.set { color: var(--good); border-color: #23352b; background: #0e1512; }
+  .conf { flex: 1 1 auto; }
+  .conf .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .08em; }
+  .conf .big { font-size: 26px; font-weight: 700; }
+  .conf .acc { color: var(--muted); font-size: 12px; margin-top: 2px; }
+
+  .bars { display: grid; grid-template-columns: repeat(10, 1fr); gap: 6px; margin-top: 4px; }
+  .bar { text-align: center; }
+  .bar .track { height: 70px; background: #0c0e12; border-radius: 6px; position: relative; overflow: hidden; border: 1px solid var(--grid); }
+  .bar .fill { position: absolute; left: 0; right: 0; bottom: 0; height: 0%; background: var(--accent); transition: height .25s ease; }
+  .bar.top .fill { background: var(--good); }
+  .bar .lab { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .bar.top .lab { color: var(--ink); font-weight: 700; }
+
+  .preview-row { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 12px; }
+  #preview {
+    width: 84px; height: 84px;
+    image-rendering: pixelated;
+    background: #000;
+    border-radius: 6px;
+    border: 1px solid var(--grid);
+  }
+
+  footer { margin-top: 16px; color: var(--muted); font-size: 11.5px; line-height: 1.6; }
+  code { background: #0c0e12; padding: 1px 5px; border-radius: 4px; color: #c7d0e0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Handwritten Digit Classifier</h1>
+    <p>In-browser inference with Google LiteRT.js — runs entirely on your device. Draw a digit (0–9) and press Predict.</p>
+  </header>
+
+  <div class="card grid">
+    <!-- Drawing -->
+    <div class="drawcol">
+      <div class="canvas-frame">
+        <canvas id="canvas" width="300" height="300" aria-label="Drawing pad"></canvas>
+      </div>
+      <div class="controls">
+        <button id="predictBtn" disabled>Predict</button>
+        <button id="clearBtn">Clear</button>
+      </div>
+      <div id="status" class="status">Loading LiteRT.js runtime…</div>
+    </div>
+
+    <!-- Result -->
+    <div class="rescol">
+      <div class="result-top">
+        <div id="digit" class="digit">?</div>
+        <div class="conf">
+          <div class="label">Prediction</div>
+          <div id="confBig" class="big">—</div>
+          <div id="accLine" class="acc">Draw a digit, then press Predict.</div>
+        </div>
+      </div>
+      <div id="bars" class="bars"></div>
+      <div class="preview-row">
+        <canvas id="preview" width="28" height="28" aria-label="28x28 model input preview"></canvas>
+        <span>What the model sees (28×28, inverted &amp; centered, like MNIST).</span>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    Model: <code>mnist.tflite</code> (float32, input [1,28,28,1] → output [1,10]) from
+    <code>balaprasanna/mnist-keras-tflite-android</code>, served via jsDelivr from GitHub.
+    Runtime: <code>@litertjs/core</code> (LiteRT.js) with Wasm + WebGPU. No backend, no build step.
+  </footer>
+</div>
+
+<script type="module">
+"use strict";
+
+// ---------------------------------------------------------------------------
+// Constants — pinned versions for reproducibility.
+// ---------------------------------------------------------------------------
+const LITERT_ESM =
+  "https://cdn.jsdelivr.net/npm/@litertjs/core@2.5.2/+esm";
+const LITERT_WASM_DIR =
+  "https://cdn.jsdelivr.net/npm/@litertjs/core@2.5.2/wasm/";
+// A float32 MNIST .tflite committed as a regular (non-LFS) binary in a public
+// GitHub repo, served by jsDelivr /gh/ with Access-Control-Allow-Origin: *.
+const MODEL_URL =
+  "https://cdn.jsdelivr.net/gh/balaprasanna/mnist-keras-tflite-android@" +
+  "77b6866c3a7b4cefd941f0eac6953a0104819994/android/app/src/main/assets/mnist.tflite";
+
+// ---------------------------------------------------------------------------
+// DOM
+// ---------------------------------------------------------------------------
+const statusEl = document.getElementById("status");
+const predictBtn = document.getElementById("predictBtn");
+const clearBtn = document.getElementById("clearBtn");
+const digitEl = document.getElementById("digit");
+const confBig = document.getElementById("confBig");
+const accLine = document.getElementById("accLine");
+const barsEl = document.getElementById("bars");
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+const preview = document.getElementById("preview");
+const pctx = preview.getContext("2d");
+let hasInk = false; // becomes true once the user draws anything
+
+// Build the 10 bar elements once.
+const barEls = [];
+for (let d = 0; d < 10; d++) {
+  const wrap = document.createElement("div");
+  wrap.className = "bar";
+  wrap.innerHTML =
+    '<div class="track"><div class="fill"></div></div><div class="lab">' + d + "</div>";
+  barsEl.appendChild(wrap);
+  barEls.push({ wrap, fill: wrap.querySelector(".fill") });
+}
+
+// ---------------------------------------------------------------------------
+// State
+// ---------------------------------------------------------------------------
+let TensorCtor = null;     // LiteRT.js Tensor class
+let model = null;          // CompiledModel
+let accelerator = null;    // "WebGPU" | "Wasm (single-threaded CPU)"
+let inputDetails = null;   // readonly TensorDetails[]
+let outputDetails = null;  // readonly TensorDetails[]
+
+function setStatus(msg, kind) {
+  statusEl.textContent = msg;
+  statusEl.className = "status" + (kind ? " " + kind : "");
+}
+
+// ---------------------------------------------------------------------------
+// Drawing
+// ---------------------------------------------------------------------------
+function resetCanvas() {
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  hasInk = false;
+}
+resetCanvas();
+ctx.strokeStyle = "#000000";
+ctx.lineWidth = 24;
+ctx.lineCap = "round";
+ctx.lineJoin = "round";
+
+let drawing = false;
+let last = null;
+
+function pointerPos(e) {
+  const r = canvas.getBoundingClientRect();
+  return {
+    x: ((e.clientX - r.left) / r.width) * canvas.width,
+    y: ((e.clientY - r.top) / r.height) * canvas.height,
+  };
+}
+
+canvas.addEventListener("pointerdown", (e) => {
+  drawing = true;
+  last = pointerPos(e);
+  // A dot for a tap.
+  ctx.beginPath();
+  ctx.arc(last.x, last.y, ctx.lineWidth / 2, 0, Math.PI * 2);
+  ctx.fillStyle = "#000";
+  ctx.fill();
+  hasInk = true;
+  canvas.setPointerCapture(e.pointerId);
+  e.preventDefault();
+});
+canvas.addEventListener("pointermove", (e) => {
+  if (!drawing) return;
+  const p = pointerPos(e);
+  ctx.beginPath();
+  ctx.moveTo(last.x, last.y);
+  ctx.lineTo(p.x, p.y);
+  ctx.stroke();
+  last = p;
+  hasInk = true;
+  e.preventDefault();
+});
+function endStroke(e) {
+  if (!drawing) return;
+  drawing = false;
+  last = null;
+  try { canvas.releasePointerCapture(e.pointerId); } catch (_) {}
+}
+canvas.addEventListener("pointerup", endStroke);
+canvas.addEventListener("pointercancel", endStroke);
+canvas.addEventListener("pointerleave", endStroke);
+
+clearBtn.addEventListener("click", () => {
+  resetCanvas();
+  digitEl.textContent = "?";
+  digitEl.classList.remove("set");
+  confBig.textContent = "—";
+  accLine.textContent = "Cleared. Draw a new digit.";
+  for (const b of barEls) { b.fill.style.height = "0%"; b.wrap.classList.remove("top"); }
+  pctx.clearRect(0, 0, preview.width, preview.height);
+});
+
+// ---------------------------------------------------------------------------
+// Preprocessing: canvas -> Float32Array matching the model's input.
+//
+// The model (per its reference Android Classifier) expects:
+//   - shape [1, 28, 28, 1], float32
+//   - value = (255 - luminance) / 255   (dark stroke -> ~1.0, white bg -> 0.0)
+// We also center the digit by center-of-mass to better match MNIST.
+// ---------------------------------------------------------------------------
+function preprocess() {
+  const W = 28, H = 28;
+  const off = document.createElement("canvas");
+  off.width = W; off.height = H;
+  const octx = off.getContext("2d", { willReadFrequently: true });
+  octx.imageSmoothingEnabled = true;
+  octx.imageSmoothingQuality = "high";
+  octx.drawImage(canvas, 0, 0, W, H);
+  const px = octx.getImageData(0, 0, W, H).data; // RGBA row-major
+
+  const ink = new Float32Array(W * H); // 0..255, inverted luminance
+  for (let i = 0; i < W * H; i++) {
+    const r = px[i * 4], g = px[i * 4 + 1], b = px[i * 4 + 2];
+    const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+    ink[i] = 255 - lum;
+  }
+
+  // Center by center-of-mass (MNIST convention).
+  let sum = 0, sx = 0, sy = 0;
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++) { const v = ink[y * W + x]; sum += v; sx += v * x; sy += v * y; }
+  let grid = ink;
+  if (sum > 0) {
+    const dx = Math.round((W - 1) / 2 - sx / sum);
+    const dy = Math.round((H - 1) / 2 - sy / sum);
+    if (dx !== 0 || dy !== 0) {
+      const shifted = new Float32Array(W * H);
+      for (let y = 0; y < H; y++)
+        for (let x = 0; x < W; x++) {
+          const nx = x + dx, ny = y + dy;
+          if (nx >= 0 && nx < W && ny >= 0 && ny < H) shifted[ny * W + nx] = ink[y * W + x];
+        }
+      grid = shifted;
+    }
+  }
+
+  // Normalize to [0,1] (model is float32).
+  const out = new Float32Array(W * H);
+  for (let i = 0; i < W * H; i++) out[i] = grid[i] / 255.0;
+
+  // Render a preview (white digit on black, like MNIST).
+  const img = pctx.createImageData(W, H);
+  for (let i = 0; i < W * H; i++) {
+    const v = Math.round(out[i] * 255);
+    img.data[i * 4] = v; img.data[i * 4 + 1] = v; img.data[i * 4 + 2] = v; img.data[i * 4 + 3] = 255;
+  }
+  pctx.putImageData(img, 0, 0);
+
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Math helpers
+// ---------------------------------------------------------------------------
+function softmax(xs) {
+  let m = -Infinity;
+  for (const x of xs) if (x > m) m = x;
+  let s = 0;
+  const e = xs.map((x) => { const v = Math.exp(x - m); s += v; return v; });
+  return e.map((v) => v / s);
+}
+function argmax(xs) {
+  let bi = 0, bv = -Infinity;
+  for (let i = 0; i < xs.length; i++) if (xs[i] > bv) { bv = xs[i]; bi = i; }
+  return bi;
+}
+function isEmptyDrawing() {
+  return !hasInk;
+}
+
+// ---------------------------------------------------------------------------
+// Predict
+// ---------------------------------------------------------------------------
+async function predict() {
+  if (!model) return;
+  if (isEmptyDrawing()) {
+    accLine.textContent = "Please draw a digit first.";
+    return;
+  }
+  predictBtn.disabled = true;
+  setStatus("Running inference…");
+
+  let inputTensor = null;
+  let outputs = null;
+  try {
+    const data = preprocess(); // Float32Array(784)
+    const dtype = inputDetails[0].dtype;
+    if (dtype !== "float32") {
+      throw new Error("Unexpected model input dtype: " + dtype + " (expected float32)");
+    }
+    const shape = inputDetails[0].shape; // Int32Array, e.g. [1,28,28,1]
+    // For a single-channel 28x28 image, row-major bytes are identical for
+    // NHWC [1,28,28,1] and NCHW [1,1,28,28], so the same buffer fits either.
+    inputTensor = new TensorCtor(data, shape);
+
+    outputs = await model.run([inputTensor]); // Tensor[]
+    const arr = await outputs[0].data();       // TypedArray (Float32Array)
+
+    const logits = Array.from(arr).slice(0, outputDetails[0].shape.reduce((a, b) => a * b, 1));
+    const probs = softmax(logits);
+    const best = argmax(probs);
+
+    // Display
+    digitEl.textContent = String(best);
+    digitEl.classList.add("set");
+    confBig.textContent = (probs[best] * 100).toFixed(1) + "%";
+    accLine.textContent = "Predicted " + best + " via " + accelerator + ".";
+    for (let d = 0; d < 10; d++) {
+      barEls[d].fill.style.height = (probs[d] * 100).toFixed(1) + "%";
+      barEls[d].wrap.classList.toggle("top", d === best);
+    }
+    setStatus("Ready — accelerator: " + accelerator + ".", "ok");
+  } catch (err) {
+    setStatus("Inference error: " + (err && err.message ? err.message : err), "error");
+    accLine.textContent = "Prediction failed.";
+  } finally {
+    // LiteRT.js uses manual memory management — always free tensors.
+    try { if (inputTensor) inputTensor.delete(); } catch (_) {}
+    if (outputs) for (const t of outputs) { try { t.delete(); } catch (_) {} }
+    predictBtn.disabled = false;
+  }
+}
+predictBtn.addEventListener("click", () => { predict().catch(() => {}); });
+
+// ---------------------------------------------------------------------------
+// Init: load LiteRT.js, Wasm, model; pick accelerator.
+//
+// GitHub Pages cannot set COOP/COEP, so SharedArrayBuffer is unavailable.
+// We avoid needing it:
+//   - loadLiteRt() defaults to threads:false -> the single-threaded Wasm build,
+//     which requires NO cross-origin isolation.
+//   - WebGPU also requires NO cross-origin isolation.
+// So both execution paths work on a static GitHub Pages site.
+// ---------------------------------------------------------------------------
+async function init() {
+  // Dynamic import so a CDN/network failure is catchable (no unhandled error).
+  const litert = await import(LITERT_ESM);
+  TensorCtor = litert.Tensor;
+  const loadLiteRt = litert.loadLiteRt;
+  const loadAndCompile = litert.loadAndCompile;
+  const isWebGPUSupported = litert.isWebGPUSupported;
+
+  setStatus("Loading LiteRT.js Wasm runtime…");
+  // Single-threaded by default (threads:false) -> no SharedArrayBuffer required.
+  await loadLiteRt(LITERT_WASM_DIR);
+
+  setStatus("Downloading MNIST model…");
+  const resp = await fetch(MODEL_URL);
+  if (!resp.ok) throw new Error("Model download failed (HTTP " + resp.status + ").");
+  const bytes = new Uint8Array(await resp.arrayBuffer());
+
+  // Prefer WebGPU for speed; fall back to single-threaded Wasm for compatibility.
+  // Both work without cross-origin isolation.
+  try {
+    const hasWebGPU =
+      typeof isWebGPUSupported === "function" && isWebGPUSupported() &&
+      typeof navigator !== "undefined" && !!navigator.gpu;
+    if (!hasWebGPU) throw new Error("WebGPU unavailable");
+    model = await loadAndCompile(bytes, { accelerator: "webgpu" });
+    accelerator = "WebGPU";
+  } catch (e1) {
+    model = await loadAndCompile(bytes, { accelerator: "wasm" });
+    accelerator = "Wasm (single-threaded CPU)";
+  }
+
+  inputDetails = model.getInputDetails();
+  outputDetails = model.getOutputDetails();
+
+  predictBtn.disabled = false;
+  setStatus("Ready — accelerator: " + accelerator + ". Draw a digit (0–9) and press Predict.", "ok");
+  accLine.textContent = "Loaded on " + accelerator + ". Draw a digit, then press Predict.";
+}
+
+init().catch((err) => {
+  setStatus("Setup error: " + (err && err.message ? err.message : err), "error");
+  accLine.textContent = "Failed to initialize the model.";
+});
+</script>
+</body>
+</html>

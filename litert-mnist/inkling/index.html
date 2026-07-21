@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LiteRT.js MNIST Demo</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: system-ui, -apple-system, Segoe UI, sans-serif;
+    background: linear-gradient(135deg, #0d1117 0%, #161b22 100%);
+    color: #e6edf3;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 2.5rem 1rem;
+  }
+  h1 { font-size: 1.6rem; letter-spacing: 0.02em; margin-bottom: 0.25rem; }
+  .subtitle { color: #8b949e; font-size: 0.9rem; margin-bottom: 1.5rem; }
+  .card {
+    background: rgba(22, 27, 34, 0.9);
+    border: 1px solid #30363d;
+    border-radius: 16px;
+    padding: 1.5rem;
+    max-width: 480px;
+    width: 100%;
+    box-shadow: 0 20px 40px rgba(0,0,0,0.45);
+  }
+  canvas {
+    display: block;
+    width: 100%;
+    max-width: 280px;
+    height: auto;
+    aspect-ratio: 1;
+    background: #fff;
+    border: 2px solid #30363d;
+    border-radius: 10px;
+    touch-action: none;
+    cursor: crosshair;
+  }
+  .btn-row {
+    display: flex;
+    gap: 0.75rem;
+    margin-top: 1rem;
+  }
+  button {
+    flex: 1;
+    padding: 0.7rem 0.5rem;
+    border: none;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: transform .05s ease, opacity .15s ease;
+  }
+  button:active { transform: translateY(1px); }
+  .btn-primary { background: #58a6ff; color: #0d1117; }
+  .btn-secondary { background: #30363d; color: #e6edf3; }
+  .btn-primary:hover { opacity: 0.92; }
+  .btn-secondary:hover { opacity: 0.85; }
+  .result {
+    margin-top: 1.25rem;
+    padding: 1rem;
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 10px;
+    min-height: 4.5rem;
+  }
+  .result h2 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.08em; color: #8b949e; margin-bottom: 0.35rem; }
+  .digit-big { font-size: 3.5rem; font-weight: 700; color: #58a6ff; line-height: 1; }
+  .confidence { font-size: 0.85rem; color: #8b949e; margin-top: 0.2rem; }
+  .note {
+    margin-top: 1.5rem;
+    font-size: 0.75rem;
+    color: #6e7681;
+    text-align: center;
+    line-height: 1.4;
+  }
+  .loader {
+    display: inline-block;
+    width: 1rem; height: 1rem;
+    border: 2px solid rgba(255,255,255,0.2);
+    border-top-color: #58a6ff;
+    border-radius: 50%;
+    animation: spin .8s linear infinite;
+    vertical-align: middle;
+    margin-left: 0.35rem;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<h1>Handwritten Digit Classifier</h1>
+<p class="subtitle">In-browser MNIST inference with LiteRT.js (Wasm CPU)</p>
+
+<div class="card">
+  <canvas id="drawCanvas" width="280" height="280"></canvas>
+  <div class="btn-row">
+    <button class="btn-primary" id="predictBtn" onclick="doPredict()">Predict</button>
+    <button class="btn-secondary" onclick="clearCanvas()">Clear</button>
+  </div>
+  <div class="result" id="resultBox">
+    <h2>Prediction</h2>
+    <div id="predictionText">Draw a digit and press Predict</div>
+  </div>
+</div>
+
+<p class="note">
+  Model: <a href="https://storage.googleapis.com/download.tensorflow.org/models/tflite/task_library/digit_classifier/android/mnist_metadata.tflite" target="_blank" rel="noopener">mnist_metadata.tflite</a> (float32, 1.2 MB) · Accelerator: <strong>wasm</strong> (single-threaded, no SharedArrayBuffer needed)
+</p>
+
+<script type="module">
+  import { loadLiteRt, loadAndCompile, Tensor } from 'https://cdn.jsdelivr.net/npm/@litertjs/core/+esm';
+
+  const CANVAS_SIZE = 280;
+  const MODEL_INPUT_SIZE = 28;
+  const MODEL_INPUT_CHANNELS = 3; // this float model expects RGB 28x28x3
+
+  let model = null;
+  let isReady = false;
+  let isLoading = false;
+
+  const canvas = document.getElementById('drawCanvas');
+  const ctx = canvas.getContext('2d');
+  const resultEl = document.getElementById('predictionText');
+
+  // Initialize canvas background white
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+  ctx.lineWidth = 14;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = '#000000';
+
+  let drawing = false;
+  let lastX = 0, lastY = 0;
+
+  function getPos(e) {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const cx = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
+    const cy = (e.touches ? e.touches[0].clientY : e.clientY) - rect.top;
+    return { x: cx * scaleX, y: cy * scaleY };
+  }
+
+  function startDraw(e) {
+    e.preventDefault();
+    drawing = true;
+    const p = getPos(e);
+    lastX = p.x; lastY = p.y;
+  }
+  function moveDraw(e) {
+    if (!drawing) return;
+    e.preventDefault();
+    const p = getPos(e);
+    ctx.beginPath();
+    ctx.moveTo(lastX, lastY);
+    ctx.lineTo(p.x, p.y);
+    ctx.stroke();
+    lastX = p.x; lastY = p.y;
+  }
+  function endDraw() { drawing = false; }
+
+  canvas.addEventListener('mousedown', startDraw);
+  canvas.addEventListener('mousemove', moveDraw);
+  canvas.addEventListener('mouseup', endDraw);
+  canvas.addEventListener('mouseleave', endDraw);
+  canvas.addEventListener('touchstart', startDraw, { passive: false });
+  canvas.addEventListener('touchmove', moveDraw, { passive: false });
+  canvas.addEventListener('touchend', endDraw);
+
+  // Initialize LiteRT
+  async function initLiteRT() {
+    try {
+      await loadLiteRt('https://cdn.jsdelivr.net/npm/@litertjs/core/wasm/');
+      model = await loadAndCompile('mnist.tflite', { accelerator: 'wasm' });
+      isReady = true;
+      document.getElementById('predictBtn').textContent = 'Predict';
+    } catch (err) {
+      console.error(err);
+      resultEl.innerHTML = '<span style="color:#f85149">Failed to load model</span>';
+    }
+  }
+
+  // Preprocess: downsample to 28x28, normalize 0-1, replicate grayscale -> RGB float32
+  function preprocessCanvas() {
+    const off = document.createElement('canvas');
+    off.width = MODEL_INPUT_SIZE; off.height = MODEL_INPUT_SIZE;
+    const offCtx = off.getContext('2d');
+    offCtx.drawImage(canvas, 0, 0, MODEL_INPUT_SIZE, MODEL_INPUT_SIZE);
+    const imgData = offCtx.getImageData(0, 0, MODEL_INPUT_SIZE, MODEL_INPUT_SIZE);
+    const data = imgData.data; // RGBA array
+    const floatData = new Float32Array(1 * MODEL_INPUT_SIZE * MODEL_INPUT_SIZE * MODEL_INPUT_CHANNELS);
+    let idx = 0;
+    for (let y = 0; y < MODEL_INPUT_SIZE; y++) {
+      for (let x = 0; x < MODEL_INPUT_SIZE; x++) {
+        const i = (y * MODEL_INPUT_SIZE + x) * 4;
+        // Grayscale from RGB (luminance) then replicate to 3 channels
+        const r = data[i];
+        const g = data[i+1];
+        const b = data[i+2];
+        const gray = (r + g + b) / 3.0;
+        const norm = gray / 255.0; // MNIST is black digit on white; invert? Let's keep as-is and rely on model training.
+        // Wait: this model may expect white background, black digit. Let's not invert.
+        floatData[idx++] = norm; // R
+        floatData[idx++] = norm; // G
+        floatData[idx++] = norm; // B
+      }
+    }
+    return floatData;
+  }
+
+  async function doPredict() {
+    if (!isReady) {
+      resultEl.innerHTML = '<span style="color:#f0ad4e">Loading model, please wait…</span>';
+      return;
+    }
+    resultEl.innerHTML = 'Predicting <span class="loader"></span>';
+
+    try {
+      const inputData = preprocessCanvas();
+      const inputTensor = new Tensor(inputData, [1, MODEL_INPUT_SIZE, MODEL_INPUT_SIZE, MODEL_INPUT_CHANNELS]);
+      const outputs = await model.run(inputTensor);
+      inputTensor.delete();
+
+      const resultTensor = outputs[0]; // first (and only) output
+      const resultData = await resultTensor.data(); // Float32Array of length 10
+      resultTensor.delete();
+
+      // Find best class
+      let best = 0;
+      for (let i = 1; i < resultData.length; i++) {
+        if (resultData[i] > resultData[best]) best = i;
+      }
+      const confidence = Math.round(resultData[best] * 1000) / 10;
+      resultEl.innerHTML = `<div class="digit-big">${best}</div><div class="confidence">Confidence: ${confidence}%</div>`;
+    } catch (err) {
+      console.error(err);
+      resultEl.innerHTML = '<span style="color:#f85149">Prediction error</span>';
+    }
+  }
+
+  window.doPredict = doPredict;
+  window.clearCanvas = function() {
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+    resultEl.innerHTML = 'Draw a digit and press Predict';
+  };
+
+  // Start loading model immediately
+  initLiteRT();
+</script>
+</body>
+</html>

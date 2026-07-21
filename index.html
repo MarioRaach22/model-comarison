@@ -278,6 +278,9 @@
     { id: "maps",       label: "Maps",          icon: "🗺️",
       models: ["ds4-flash", "floki", "glm5.2", "qwen3.6-35b-3b"],
       prompt: "Build an elegant, educational World Language Explorer: an interactive map that reveals the linguistic diversity of the world. Users hover over countries to see their names, click to reveal detailed language profiles, and toggle a mode that recolors the whole map into a chromatic tapestry of language families (Indo-European, Sino-Tibetan, Afroasiatic, Austronesian, Dravidian, …). The aesthetic should feel like a beautifully designed atlas — scholarly yet approachable, information-rich but never overwhelming. Include a search box to find countries." },
+    { id: "litert-mnist", label: "LiteRT MNIST", icon: "✍️",
+      models: ["ds4-flash", "floki", "gemma4-31b", "glm-5.2", "inkling", "kimi-k3", "minimax2.7-abo", "qwen3.6-35b-3b"],
+      prompt: "Build a working, browser-only machine-learning demo using Google's LiteRT.js (LiteRT for Web). This library is new — do NOT rely on memory. Use web search to find the current official documentation first, and follow the actual API. If you're unsure of a symbol or import path, search rather than guess.\n\nThe demo: a handwritten-digit classifier. A <canvas> the user draws a digit on, a \"Predict\" button, and a \"Clear\" button. On predict, run a small MNIST .tflite model in-browser via LiteRT.js and show the predicted digit with confidence. Source a suitable public .tflite model (e.g. from HuggingFace or Kaggle) and state which one you used.\n\nHard constraints — this must be deployable on GitHub Pages:\n- Static only. No backend, no build step, no bundler, no `npm install`.\n- Load the LiteRT.js ES module and its Wasm files from a CDN (e.g. jsdelivr). Same for any other dependency.\n- GitHub Pages cannot set custom HTTP headers, so you CANNOT rely on COOP/COEP or SharedArrayBuffer being available. Use an execution path that works without cross-origin isolation (WebGPU or single-threaded Wasm), or include a client-side workaround. Say which you chose.\n- The model file must be reachable from a static host: either a small model committed alongside the page, or fetched cross-origin with CORS. Note: GitHub Pages serves Git LFS files as pointer text, not binary.\n- No console errors, no unhandled promise rejections.\n\nDeliverable: a single self-contained index.html (all HTML, CSS, JS inline) plus a short note listing exactly which model URL and which accelerator you used, and any deployment caveat. Return the file, then the note. Nothing else." },
   ];
 
   // Hübschere Anzeigenamen für die Modell-Buttons.
@@ -286,7 +289,11 @@
       "ds4-flash": "DS4 Flash",
       "floki": "Floki",
       "glm5.2": "GLM 5.2",
+      "glm-5.2": "GLM 5.2",
+      "gemma4-31b": "Gemma4 31B",
+      "inkling": "Inkling",
       "kimi-k3": "Kimi K3",
+      "minimax2.7-abo": "MiniMax 2.7",
       "qwen3.6-35b-3b": "Qwen3.6 35B-3B",
       "qwen3.6-36b-3b": "Qwen3.6 36B-3B",
     };

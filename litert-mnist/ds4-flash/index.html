@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MNIST Digit Classifier – LiteRT.js</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  background: linear-gradient(145deg, #f0f2f5 0%, #e6e9f0 100%);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  margin: 0;
+  padding: 1rem;
+}
+.card {
+  background: rgba(255,255,255,0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-radius: 20px;
+  padding: 2rem 2rem 1.5rem;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06);
+  max-width: 420px;
+  width: 100%;
+  text-align: center;
+}
+h1 {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: #1e1e2e;
+  letter-spacing: -0.01em;
+  margin-bottom: 0.25rem;
+}
+.subtitle {
+  font-size: 0.85rem;
+  color: #6b7280;
+  margin-bottom: 1.25rem;
+}
+.canvas-wrapper {
+  position: relative;
+  display: inline-block;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: inset 0 2px 4px rgba(0,0,0,0.3), 0 1px 3px rgba(0,0,0,0.1);
+}
+canvas {
+  display: block;
+  width: 280px;
+  height: 280px;
+  background: #000;
+  cursor: crosshair;
+  touch-action: none;
+}
+.controls {
+  display: flex;
+  gap: 0.6rem;
+  justify-content: center;
+  margin: 1.25rem 0 0.75rem;
+}
+button {
+  padding: 0.6rem 1.6rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s, opacity 0.2s;
+  font-family: inherit;
+}
+button:active { transform: scale(0.97); }
+#predictBtn {
+  background: #4f46e5;
+  color: #fff;
+}
+#predictBtn:hover:not(:disabled) { background: #4338ca; }
+#predictBtn:disabled { background: #a5b4fc; cursor: not-allowed; opacity: 0.6; }
+#clearBtn {
+  background: #e5e7eb;
+  color: #374151;
+}
+#clearBtn:hover { background: #d1d5db; }
+#result {
+  font-size: 1.35rem;
+  font-weight: 700;
+  min-height: 2.2rem;
+  color: #1e1e2e;
+  margin: 0.25rem 0;
+}
+#confidence {
+  font-size: 0.85rem;
+  font-weight: 400;
+  color: #6b7280;
+  min-height: 1.2rem;
+}
+#status {
+  font-size: 0.78rem;
+  color: #9ca3af;
+  min-height: 1.2rem;
+  margin-top: 0.5rem;
+  word-break: break-word;
+}
+#status.loading { color: #6366f1; }
+#status.error { color: #ef4444; }
+#status.ready { color: #22c55e; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>✏️ Digit Classifier</h1>
+  <p class="subtitle">Draw a digit 0–9, then click Predict</p>
+
+  <div class="canvas-wrapper">
+    <canvas id="canvas" width="280" height="280"></canvas>
+  </div>
+
+  <div class="controls">
+    <button id="predictBtn" disabled>Predict</button>
+    <button id="clearBtn">Clear</button>
+  </div>
+
+  <div id="result"></div>
+  <div id="confidence"></div>
+  <div id="status">Initializing…</div>
+</div>
+
+<script type="module">
+import {
+  loadLiteRt,
+  loadAndCompile,
+  Tensor,
+} from 'https://cdn.jsdelivr.net/npm/@litertjs/core/+esm';
+
+// ---------------------------------------------------------------------------
+// Config
+// ---------------------------------------------------------------------------
+const WASM_URL   = 'https://cdn.jsdelivr.net/npm/@litertjs/core/wasm/';
+
+// Float32 MNIST model (shape [1,28,28,1] → [1,10]).
+// Sourced from the DRAW project (https://github.com/oshimamasara/DRAW).
+// Hosted on Dropbox with proper CORS headers.
+const MODEL_URL  = 'https://dl.dropboxusercontent.com/s/gpetntg59tivryt/mnist.tflite';
+
+// ---------------------------------------------------------------------------
+// DOM refs
+// ---------------------------------------------------------------------------
+const canvas      = document.getElementById('canvas');
+const ctx         = canvas.getContext('2d');
+const predictBtn  = document.getElementById('predictBtn');
+const clearBtn    = document.getElementById('clearBtn');
+const resultDiv   = document.getElementById('result');
+const confDiv     = document.getElementById('confidence');
+const statusDiv   = document.getElementById('status');
+
+// ---------------------------------------------------------------------------
+// Drawing state
+// ---------------------------------------------------------------------------
+let drawing = false;
+let lastX = 0;
+let lastY = 0;
+
+function setStatus(msg, cls = 'loading') {
+  statusDiv.textContent = msg;
+  statusDiv.className = cls;
+}
+
+function setupCanvas() {
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 22;
+}
+
+function pos(e, rect) {
+  return [
+    (e.clientX - rect.left) * (canvas.width  / rect.width),
+    (e.clientY - rect.top)  * (canvas.height / rect.height),
+  ];
+}
+
+function draw(x, y) {
+  ctx.beginPath();
+  ctx.moveTo(lastX, lastY);
+  ctx.lineTo(x, y);
+  ctx.stroke();
+  lastX = x;
+  lastY = y;
+}
+
+// --- mouse ----------------------------------------------------------------
+canvas.addEventListener('mousedown', (e) => {
+  drawing = true;
+  const r = canvas.getBoundingClientRect();
+  [lastX, lastY] = pos(e, r);
+});
+canvas.addEventListener('mousemove', (e) => {
+  if (!drawing) return;
+  draw(...pos(e, canvas.getBoundingClientRect()));
+});
+canvas.addEventListener('mouseup',   () => { drawing = false; });
+canvas.addEventListener('mouseleave', () => { drawing = false; });
+
+// --- touch ----------------------------------------------------------------
+canvas.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  drawing = true;
+  const t = e.touches[0];
+  const r = canvas.getBoundingClientRect();
+  [lastX, lastY] = pos(t, r);
+}, { passive: false });
+canvas.addEventListener('touchmove', (e) => {
+  e.preventDefault();
+  if (!drawing) return;
+  draw(...pos(e.touches[0], canvas.getBoundingClientRect()));
+}, { passive: false });
+canvas.addEventListener('touchend', () => { drawing = false; });
+
+// ---------------------------------------------------------------------------
+// LiteRT lifecycle
+// ---------------------------------------------------------------------------
+let model = null;
+
+async function initLiteRt() {
+  try {
+    setStatus('Loading LiteRT.js runtime…');
+
+    await loadLiteRt(WASM_URL);
+
+    setStatus('Downloading MNIST model (1.1 MiB)…');
+
+    // Use single-threaded Wasm (XNNPack) – no SharedArrayBuffer needed.
+    // Works on GitHub Pages without COOP/COEP headers.
+    model = await loadAndCompile(MODEL_URL, { accelerator: 'wasm' });
+
+    setStatus('✓ Ready — draw a digit!', 'ready');
+    predictBtn.disabled = false;
+  } catch (err) {
+    setStatus('✗ ' + err.message, 'error');
+    console.error('LiteRT init error:', err);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Image pre-processing
+// ---------------------------------------------------------------------------
+function getInputTensor() {
+  // Scale the 280×280 canvas down to 28×28 via an off-screen canvas.
+  const temp = document.createElement('canvas');
+  temp.width  = 28;
+  temp.height = 28;
+  const tCtx = temp.getContext('2d');
+  // Match MNIST appearance: white digit on black background.
+  tCtx.fillStyle = '#000';
+  tCtx.fillRect(0, 0, 28, 28);
+  tCtx.drawImage(canvas, 0, 0, 28, 28);
+
+  const { data } = tCtx.getImageData(0, 0, 28, 28);
+  const floats = new Float32Array(28 * 28);
+
+  for (let i = 0; i < 28 * 28; i++) {
+    // The red, green, and blue channels are identical (grayscale).
+    // Pixel values are in [0, 255]; normalise to [0, 1].
+    floats[i] = data[i * 4] / 255;
+  }
+
+  // The model expects NHWC layout, shape [1, 28, 28, 1].
+  return new Tensor(floats, [1, 28, 28, 1]);
+}
+
+// ---------------------------------------------------------------------------
+// Predict
+// ---------------------------------------------------------------------------
+predictBtn.addEventListener('click', async () => {
+  if (!model) return;
+
+  predictBtn.disabled = true;
+  resultDiv.textContent = '';
+  confDiv.textContent   = '';
+  setStatus('Running inference…');
+
+  let inputTensor = null;
+  let outputs     = null;
+
+  try {
+    inputTensor = getInputTensor();
+
+    // Run – LiteRT.js returns an array of output Tensors.
+    outputs = await model.run(inputTensor);
+
+    // The first (and only) output has shape [1, 10].
+    const out = outputs[0];
+    const probs = await out.data();   // Float32Array(length=10)
+
+    // Argmax + softmax confidence.
+    let bestIdx = 0;
+    let bestVal = probs[0];
+    for (let i = 1; i < probs.length; i++) {
+      if (probs[i] > bestVal) {
+        bestVal = probs[i];
+        bestIdx = i;
+      }
+    }
+
+    resultDiv.textContent = `Prediction: ${bestIdx}`;
+    confDiv.textContent   = `Confidence: ${(bestVal * 100).toFixed(1)}%`;
+    setStatus('✓ Done', 'ready');
+  } catch (err) {
+    setStatus('✗ ' + err.message, 'error');
+    console.error('Predict error:', err);
+  } finally {
+    // Manual memory management – delete tensors when no longer needed.
+    if (inputTensor) inputTensor.delete();
+    if (outputs) outputs.forEach(t => t.delete());
+    predictBtn.disabled = false;
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Clear
+// ---------------------------------------------------------------------------
+clearBtn.addEventListener('click', () => {
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  resultDiv.textContent = '';
+  confDiv.textContent   = '';
+});
+
+// ---------------------------------------------------------------------------
+// Boot
+// ---------------------------------------------------------------------------
+setupCanvas();
+initLiteRt();
+</script>
+</body>
+</html>
