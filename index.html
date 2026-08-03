@@ -264,13 +264,13 @@
   // Projekt-Definitionen: Ordnernamen entsprechen exakt den Verzeichnissen im Repo.
   const PROJECTS = [
     { id: "bitcoin",    label: "Bitcoin",       icon: "₿",
-      models: ["ds4-flash", "floki", "glm5.2", "qwen3.6-35b-3b"],
-      prompt: "Build an interactive live Bitcoin price chart. Fetch the current BTC/USD price and historical data from a free public API that requires no API key (e.g. the Binance public API or CoinGecko free endpoint). Show a line chart with selectable time ranges (1H, 24H, 7D, 30D) that visibly animates when switching ranges. Display the current price prominently with a green/red indicator for 24h change, and auto-refresh the live price every 10 seconds. Include hover tooltips showing exact price and timestamp." },
+      models: ["ds4-flash", "ds4-flash-0731", "floki", "glm5.2", "qwen3.6-35b-3b"],
+      prompt: "Build an interactive live Bitcoin price chart. Fetch the current BTC/USD price and historical data from a free public API that requires no API key (e.g. the Binance public API or CoinGecko free endpoint). Show a line chart with selectable time ranges (1H, 24H, 7D, 30D) that visibly animates when switching ranges. Display the current price prominently with a green/red indicator for 24h change, and auto-refresh the live price every 10 seconds. Include hover tooltips showing exact price and timestamp.\n\n— Follow-up —\n\nExtend the chart to also fetch and display Monero (XMR/USD) from the same free, keyless public API. Add a toggle to switch between three views: BTC only, XMR only, and a comparison mode. In comparison mode, normalize both prices to percentage change so the lines are comparable on one chart (dual y-axis as fallback option), with distinct colors and a legend. Show both current prices side by side with their 24h change indicators, plus a small stat row comparing 7d performance of both coins. The view toggle must animate smoothly." },
     { id: "gravity",    label: "Gravity",       icon: "🪐",
       models: ["ds4-flash", "floki", "glm5.2", "qwen3.6-36b-3b"],
       prompt: "An interactive particle gravity sandbox on a canvas: hundreds of particles with trails, clicking adds a heavy attractor. Make it mesmerizing." },
     { id: "rubikscube", label: "Rubik's Cube",  icon: "🧊",
-      models: ["ds4-flash", "floki", "glm5.2", "kimi-k3", "qwen3.6-35b-3b"],
+      models: ["ds4-flash", "ds4-flash-0731", "floki", "glm5.2", "kimi-k3", "qwen3.6-35b-3b"],
       prompt: "Build a colorful, 3D-looking Rubik's Cube with 'Scramble' and 'Solve' buttons. The cube must visibly animate its rotations." },
     { id: "tippspiel",  label: "Tippspiel",     icon: "⚽",
       models: ["ds4-flash", "floki", "glm5.2", "kimi-k3", "qwen3.6-35b-3b"],
@@ -278,8 +278,13 @@
     { id: "maps",       label: "Maps",          icon: "🗺️",
       models: ["ds4-flash", "floki", "glm5.2", "qwen3.6-35b-3b"],
       prompt: "Build an elegant, educational World Language Explorer: an interactive map that reveals the linguistic diversity of the world. Users hover over countries to see their names, click to reveal detailed language profiles, and toggle a mode that recolors the whole map into a chromatic tapestry of language families (Indo-European, Sino-Tibetan, Afroasiatic, Austronesian, Dravidian, …). The aesthetic should feel like a beautifully designed atlas — scholarly yet approachable, information-rich but never overwhelming. Include a search box to find countries." },
+    { id: "snake",      label: "Snake",         icon: "🐍",
+      models: ["ds4-flash", "floki", "glm-5.2", "kimi-k3", "qwen3.6-35b-3b"],
+      // Diese Ergebnisse liegen als snake.html vor, nur kimi-k3 als index.html.
+      file: "snake.html", files: { "kimi-k3": "index.html" },
+      prompt: "" },
     { id: "litert-mnist", label: "LiteRT MNIST", icon: "✍️",
-      models: ["ds4-flash", "floki", "gemma4-31b", "glm-5.2", "inkling", "kimi-k3", "minimax2.7-abo", "qwen3.6-35b-3b"],
+      models: ["ds4-flash", "ds4-flash-0731", "floki", "gemma4-31b", "glm-5.2", "inkling", "kimi-k3", "minimax2.7-abo", "qwen3.6-35b-3b"],
       prompt: "Build a working, browser-only machine-learning demo using Google's LiteRT.js (LiteRT for Web). This library is new — do NOT rely on memory. Use web search to find the current official documentation first, and follow the actual API. If you're unsure of a symbol or import path, search rather than guess.\n\nThe demo: a handwritten-digit classifier. A <canvas> the user draws a digit on, a \"Predict\" button, and a \"Clear\" button. On predict, run a small MNIST .tflite model in-browser via LiteRT.js and show the predicted digit with confidence. Source a suitable public .tflite model (e.g. from HuggingFace or Kaggle) and state which one you used.\n\nHard constraints — this must be deployable on GitHub Pages:\n- Static only. No backend, no build step, no bundler, no `npm install`.\n- Load the LiteRT.js ES module and its Wasm files from a CDN (e.g. jsdelivr). Same for any other dependency.\n- GitHub Pages cannot set custom HTTP headers, so you CANNOT rely on COOP/COEP or SharedArrayBuffer being available. Use an execution path that works without cross-origin isolation (WebGPU or single-threaded Wasm), or include a client-side workaround. Say which you chose.\n- The model file must be reachable from a static host: either a small model committed alongside the page, or fetched cross-origin with CORS. Note: GitHub Pages serves Git LFS files as pointer text, not binary.\n- No console errors, no unhandled promise rejections.\n\nDeliverable: a single self-contained index.html (all HTML, CSS, JS inline) plus a short note listing exactly which model URL and which accelerator you used, and any deployment caveat. Return the file, then the note. Nothing else." },
   ];
 
@@ -287,6 +292,7 @@
   function prettyModel(folder) {
     const map = {
       "ds4-flash": "DS4 Flash",
+      "ds4-flash-0731": "DS4 Flash 0731",
       "floki": "Floki",
       "glm5.2": "GLM 5.2",
       "glm-5.2": "GLM 5.2",
@@ -374,7 +380,10 @@
   }
 
   function framePath() {
-    return `${current.project.id}/${current.model}/index.html`;
+    const p = current.project;
+    // Dateiname: pro-Modell-Override > Projekt-Default > index.html
+    const file = (p.files && p.files[current.model]) || p.file || "index.html";
+    return `${p.id}/${current.model}/${file}`;
   }
 
   function loadFrame() {

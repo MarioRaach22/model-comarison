@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Rubik's Cube</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; }
+  body {
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    background: radial-gradient(ellipse at 50% 30%, #1d2b4d 0%, #0d1428 55%, #070b18 100%);
+    color: #e8ecf8;
+    user-select: none;
+  }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+
+  .hud {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    bottom: 30px;
+    background: rgba(13, 20, 40, 0.72);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    border-radius: 999px;
+    padding: 10px 18px;
+    backdrop-filter: blur(10px);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  }
+  button {
+    font: inherit;
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0.4px;
+    color: #fff;
+    border: none;
+    border-radius: 999px;
+    padding: 10px 26px;
+    cursor: pointer;
+    transition: transform 0.15s ease, opacity 0.15s ease, box-shadow 0.15s ease;
+  }
+  button:not(:disabled):hover { transform: translateY(-2px) scale(1.03); }
+  button:not(:disabled):active { transform: translateY(0) scale(0.98); }
+  button:disabled { opacity: 0.38; cursor: not-allowed; }
+  #scramble {
+    background: linear-gradient(135deg, #ff7a18, #e63462);
+    box-shadow: 0 6px 18px rgba(230, 52, 98, 0.45);
+  }
+  #solve {
+    background: linear-gradient(135deg, #17b978, #0f7f5e);
+    box-shadow: 0 6px 18px rgba(23, 185, 120, 0.45);
+  }
+  #status {
+    min-width: 118px;
+    text-align: center;
+    font-size: 14px;
+    color: #b9c4e0;
+    font-weight: 500;
+  }
+  .title {
+    position: absolute;
+    top: 22px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    background: linear-gradient(90deg, #ffd500, #ff5800, #c41e3a, #009e60, #0051ba, #ffd500);
+    background-size: 200% auto;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: slide 8s linear infinite;
+  }
+  @keyframes slide { to { background-position: 200% center; } }
+  .hint {
+    position: absolute;
+    bottom: 92px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 12px;
+    letter-spacing: 1.2px;
+    color: #5c6a8f;
+    text-transform: uppercase;
+  }
+</style>
+</head>
+<body>
+  <div id="app"></div>
+  <div class="title">Rubik&#8217;s Cube</div>
+  <div class="hint">drag to orbit the view</div>
+  <div class="hud">
+    <button id="scramble">Scramble</button>
+    <div id="status">Ready</div>
+    <button id="solve" disabled>Solve</button>
+  </div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+    const app = document.getElementById('app');
+
+    // ---------- Renderer / Scene / Camera ----------
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.05;
+    app.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 100);
+    camera.position.set(5.4, 5.2, 7.6);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+    controls.minDistance = 4.5;
+    controls.maxDistance = 16;
+    controls.maxPolarAngle = Math.PI * 0.85;
+
+    // ---------- Lights ----------
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x3a4a72, 0.9));
+    const key = new THREE.DirectionalLight(0xffffff, 2.2);
+    key.position.set(6, 10, 7);
+    key.castShadow = true;
+    key.shadow.mapSize.set(2048, 2048);
+    key.shadow.camera.left = -6; key.shadow.camera.right = 6;
+    key.shadow.camera.top = 6; key.shadow.camera.bottom = -6;
+    key.shadow.camera.far = 30;
+    key.shadow.bias = -0.0005;
+    scene.add(key);
+    const rim = new THREE.DirectionalLight(0x88aaff, 0.55);
+    rim.position.set(-6, 2, -8);
+    scene.add(rim);
+
+    // ---------- Floor ----------
+    const floor = new THREE.Mesh(
+      new THREE.CircleGeometry(9, 64),
+      new THREE.MeshStandardMaterial({ color: 0x0a1020, roughness: 0.85, metalness: 0.35 })
+    );
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.y = -2.6;
+    floor.receiveShadow = true;
+    scene.add(floor);
+
+    // ---------- Materials / Geometry ----------
+    const halfPI = Math.PI / 2;
+    const STICKER_COLORS = {
+      '+x': 0xc41e3a, '-x': 0xff5800,
+      '+y': 0xffffff, '-y': 0xffd500,
+      '+z': 0x009e60, '-z': 0x0051ba,
+    };
+    const FACE_DEFS = [
+      { axis: '+x', dir: [ 1, 0, 0], ry:  halfPI, rx: 0 },
+      { axis: '-x', dir: [-1, 0, 0], ry: -halfPI, rx: 0 },
+      { axis: '+y', dir: [ 0, 1, 0], ry: 0, rx: -halfPI },
+      { axis: '-y', dir: [ 0,-1, 0], ry: 0, rx:  halfPI },
+      { axis: '+z', dir: [ 0, 0, 1], ry: 0, rx: 0 },
+      { axis: '-z', dir: [ 0, 0,-1], ry: Math.PI, rx: 0 },
+    ];
+
+    function roundedRect(w, h, r) {
+      const s = new THREE.Shape();
+      const x = -w / 2, y = -h / 2;
+      s.moveTo(x + r, y);
+      s.lineTo(x + w - r, y);
+      s.quadraticCurveTo(x + w, y, x + w, y + r);
+      s.lineTo(x + w, y + h - r);
+      s.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+      s.lineTo(x + r, y + h);
+      s.quadraticCurveTo(x, y + h, x, y + h - r);
+      s.lineTo(x, y + r);
+      s.quadraticCurveTo(x, y, x + r, y);
+      return s;
+    }
+
+    const boxGeo = new THREE.BoxGeometry(1.03, 1.03, 1.03);
+    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x0b0d13, roughness: 0.38, metalness: 0.3 });
+    const stickerGeo = new THREE.ShapeGeometry(roundedRect(0.9, 0.9, 0.13));
+    const stickerMats = {};
+    for (const k in STICKER_COLORS) {
+      stickerMats[k] = new THREE.MeshStandardMaterial({
+        color: STICKER_COLORS[k], roughness: 0.26, metalness: 0.06,
+      });
+    }
+
+    // ---------- Cubies ----------
+    const cubies = [];
+    function makeCubie(i, j, k) {
+      const g = new THREE.Group();
+      g.add(new THREE.Mesh(boxGeo, bodyMat));
+      const outer = {
+        '+x': i ===  1, '-x': i === -1,
+        '+y': j ===  1, '-y': j === -1,
+        '+z': k ===  1, '-z': k === -1,
+      };
+      for (const f of FACE_DEFS) {
+        if (!outer[f.axis]) continue;
+        const s = new THREE.Mesh(stickerGeo, stickerMats[f.axis]);
+        s.rotation.y = f.ry;
+        s.rotation.x = f.rx;
+        s.position.set(f.dir[0] * 0.517, f.dir[1] * 0.517, f.dir[2] * 0.517);
+        g.add(s);
+      }
+      g.position.set(i, j, k);
+      return g;
+    }
+    for (let i = -1; i <= 1; i++)
+      for (let j = -1; j <= 1; j++)
+        for (let k = -1; k <= 1; k++) {
+          const c = makeCubie(i, j, k);
+          scene.add(c);
+          cubies.push(c);
+        }
+
+    // ---------- Move engine ----------
+    const MOVE_LABELS = {
+      'x1': ['R', "R'"], 'x-1': ["L'", 'L'],
+      'y1': ['U', "U'"], 'y-1': ["D'", 'D'],
+      'z1': ['F', "F'"], 'z-1': ["B'", 'B'],
+      'x0': ["M'", 'M'], 'y0': ['E', "E'"], 'z0': ['S', "S'"],
+    };
+
+    const queue = [];
+    let history = [];
+    let busy = false;
+    let current = null;
+
+    const scrambleBtn = document.getElementById('scramble');
+    const solveBtn = document.getElementById('solve');
+    const statusEl = document.getElementById('status');
+
+    function updateButtons() {
+      scrambleBtn.disabled = busy;
+      solveBtn.disabled = busy || history.length === 0;
+    }
+
+    function snapCubie(c) {
+      c.position.set(
+        Math.round(c.position.x),
+        Math.round(c.position.y),
+        Math.round(c.position.z)
+      );
+      for (const a of ['x', 'y', 'z']) {
+        let v = Math.round(c.rotation[a] / halfPI) * halfPI;
+        v = ((v + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
+        c.rotation[a] = v;
+      }
+    }
+
+    function doMove(m) {
+      busy = true;
+      updateButtons();
+      statusEl.textContent = queue.length
+        ? `${label(m)} &#183; ${queue.length} left`
+        : `${label(m)}&#8230;`;
+
+      const g = new THREE.Group();
+      g.position[m.axis] = m.layer;
+      const sel = cubies.filter(
+        (c) => Math.round(c.position[m.axis]) === m.layer
+      );
+      sel.forEach((c) => g.attach(c));
+      scene.add(g);
+
+      current = {
+        group: g, sel,
+        axis: m.axis,
+        start: 0,
+        delta: m.dir * halfPI,
+        progress: 0,
+        duration: 0.26,
+      };
+    }
+
+    function finishMove() {
+      const { group, sel } = current;
+      current = null;
+      group.updateMatrixWorld();
+      sel.forEach((c) => scene.attach(c));
+      scene.remove(group);
+      cubies.forEach(snapCubie);
+      if (queue.length) doMove(queue.shift());
+      else {
+        busy = false;
+        updateButtons();
+        statusEl.innerHTML = history.length ? 'Scrambled &#8212; go ahead, solve it!' : 'Solved!';
+      }
+    }
+
+    function label(m) {
+      const s = MOVE_LABELS[m.axis + m.layer];
+      return s[m.dir === 1 ? 0 : 1];
+    }
+
+    function enqueue(m) {
+      queue.push(m);
+      if (!busy) doMove(queue.shift());
+    }
+
+    // ---------- Actions ----------
+    function randomMove(prevAxis) {
+      const axes = ['x', 'y', 'z'].filter((a) => a !== prevAxis);
+      const axis = axes[Math.floor(Math.random() * axes.length)];
+      const layer = [-1, 0, 1][Math.floor(Math.random() * 3)];
+      const dir = Math.random() < 0.5 ? 1 : -1;
+      return { axis, layer, dir };
+    }
+
+    function scramble() {
+      if (busy) return;
+      const seq = [];
+      let prev = null;
+      for (let i = 0; i < 20; i++) {
+        const m = randomMove(prev);
+        seq.push(m);
+        prev = m.axis;
+      }
+      history = seq;
+      seq.forEach((m) => enqueue(m));
+    }
+
+    function solve() {
+      if (busy || !history.length) return;
+      [...history]
+        .reverse()
+        .map((m) => ({ ...m, dir: -m.dir }))
+        .forEach((m) => enqueue(m));
+      history = [];
+    }
+
+    scrambleBtn.addEventListener('click', scramble);
+    solveBtn.addEventListener('click', solve);
+
+    // ---------- Loop ----------
+    const clock = new THREE.Clock();
+    function ease(t) {
+      return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+      const dt = clock.getDelta();
+      if (current) {
+        current.progress = Math.min(1, current.progress + dt / current.duration);
+        const t = ease(current.progress);
+        current.group.rotation[current.axis] = current.start + current.delta * t;
+        if (current.progress >= 1) {
+          current.group.rotation[current.axis] = current.start + current.delta;
+          finishMove();
+        }
+      }
+      controls.update();
+      renderer.render(scene, camera);
+    }
+    animate();
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>

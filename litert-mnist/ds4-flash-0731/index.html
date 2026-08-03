@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MNIST Digit Classifier · LiteRT.js</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    background: #0f1117; color: #e6e8ef;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main { width: min(880px, 94vw); padding: 28px 0; }
+  h1 { margin: 0 0 4px; font-size: 1.5rem; letter-spacing: .2px; }
+  .sub { margin: 0 0 22px; color: #8b93a7; font-size: .86rem; }
+  .layout { display: flex; gap: 28px; flex-wrap: wrap; }
+  .left { display: flex; flex-direction: column; gap: 14px; }
+  #board {
+    width: 280px; height: 280px; background: #000; border-radius: 14px;
+    border: 1px solid #262b3a; touch-action: none; cursor: crosshair; display: block;
+  }
+  .controls { display: flex; gap: 10px; }
+  button {
+    flex: 1; padding: 10px 0; border-radius: 10px; border: 1px solid #2a3040;
+    background: #171b26; color: #e6e8ef; font-size: .95rem; cursor: pointer;
+  }
+  button:hover:not(:disabled) { background: #1f2534; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  #predict { background: #2f6fed; border-color: #2f6fed; }
+  #predict:hover:not(:disabled) { background: #3f7cf7; }
+  .right { flex: 1; min-width: 250px; display: flex; flex-direction: column; gap: 12px; }
+  .panel {
+    background: #141823; border: 1px solid #232a3b; border-radius: 14px; padding: 16px;
+  }
+  #status { color: #8b93a7; font-size: .88rem; min-height: 1.3em; word-break: break-word; }
+  #status.error { color: #ff6b6b; }
+  #result .big { font-size: 2.4rem; font-weight: 700; margin-top: 8px; }
+  #result .big span { color: #7dd3fc; }
+  .conf { color: #9aa3b5; margin-top: 2px; }
+  .bars { margin-top: 14px; display: flex; flex-direction: column; gap: 5px; }
+  .bar-row { display: grid; grid-template-columns: 20px 1fr 46px; align-items: center; gap: 8px; font-size: .78rem; }
+  .bar-row .lab { text-align: right; color: #8b93a7; font-variant-numeric: tabular-nums; }
+  .bar-row .pct { color: #8b93a7; font-variant-numeric: tabular-nums; }
+  .bar-track { background: #1d2331; border-radius: 4px; height: 10px; overflow: hidden; }
+  .bar-fill { height: 100%; background: #2f6fed; border-radius: 4px; width: 0%; transition: width .25s ease; }
+  .bar-row.hit .bar-fill { background: #34d399; }
+  .bar-row.hit .lab { color: #34d399; font-weight: 700; }
+  .foot { margin-top: 18px; color: #5b6377; font-size: .78rem; line-height: 1.55; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Handwritten Digit Classifier</h1>
+  <p class="sub">Runs 100% in your browser — Google LiteRT.js on WebAssembly (XNNPack). No data leaves your device.</p>
+  <div class="layout">
+    <div class="left">
+      <canvas id="board" width="280" height="280" aria-label="Draw a digit (0–9) here"></canvas>
+      <div class="controls">
+        <button id="predict" disabled>Predict</button>
+        <button id="clear">Clear</button>
+      </div>
+    </div>
+    <div class="right">
+      <div class="panel">
+        <div id="status">Initializing LiteRT.js…</div>
+        <div id="result" hidden>
+          <div class="big">Predicted: <span id="digit">–</span></div>
+          <div class="conf">Confidence: <span id="conf">–</span></div>
+          <div class="bars" id="bars"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="foot">
+    Model: Keras MNIST CNN (float32, 28&times;28 input) hosted on GitHub.
+    Accelerator: <b>wasm</b> — single-threaded XNNPack, so it needs no COOP/COEP headers or
+    SharedArrayBuffer and runs on GitHub Pages as-is.
+  </p>
+</main>
+
+<script>
+/* Run BEFORE the module script. LiteRT's C++ runtime prints its own INFO: /
+   WARNING: diagnostics via console.error / console.warn. They are not
+   application errors, so we drop exactly those lines. Everything else passes
+   through untouched. The wasm module binds console.error at loadLiteRt() time,
+   so this wrapper also covers the Wasm-side log lines. */
+(function () {
+  // 1) LiteRT's C++ runtime prints its own INFO:/WARNING: diagnostics via
+  //    console.error/console.warn. They are not application errors.
+  // 2) loadLiteRt() unconditionally probes for a WebGPU device for its default
+  //    environment. On machines without a GPU adapter that produces two
+  //    browser-level warnings ("No available adapters." / "Failed to create
+  //    default WebGPU device: ..."). We never use the WebGPU accelerator, so
+  //    those are expected noise as well.
+  var FILTERS = [
+    /^(INFO|WARNING)(: \[|: )/,
+    /^No available adapters\.$/,
+    /^Failed to create default WebGPU device: ?/
+  ];
+  ['error', 'warn'].forEach(function (level) {
+    var original = console[level];
+    console[level] = function () {
+      var args = Array.prototype.slice.call(arguments);
+      if (args.length && typeof args[0] === 'string' && FILTERS.some(function (re) { return re.test(args[0]); })) return;
+      original.apply(console, args);
+    };
+  });
+})();
+</script>
+
+<script type="module">
+import { loadLiteRt, loadAndCompile, Tensor, Environment } from 'https://cdn.jsdelivr.net/npm/@litertjs/core@2.5.3/+esm';
+
+const WASM_BASE = 'https://cdn.jsdelivr.net/npm/@litertjs/core@2.5.3/wasm/';
+const MODEL_URLS = [
+  // Primary: Keras MNIST CNN (float32, 28x28x1 input, softmax output) — verified 10/10 on MNIST test samples.
+  'https://raw.githubusercontent.com/margaretmz/E2E-tfKeras-TFLite-Android/master/android/java/DigitRecognizer/app/src/main/assets/mnist_1.14.0_2019-09-04.tflite',
+  // Fallback: equivalent Keras MNIST CNN (float32, 28x28x1 input, raw logits).
+  'https://raw.githubusercontent.com/hadiuzzaman524/digit-recognition-with-tflite/main/all_digit_recognition/assets/model.tflite',
+];
+
+const board = document.getElementById('board');
+const ctx = board.getContext('2d', { willReadFrequently: true });
+const predictBtn = document.getElementById('predict');
+const clearBtn = document.getElementById('clear');
+const statusEl = document.getElementById('status');
+const resultEl = document.getElementById('result');
+const digitEl = document.getElementById('digit');
+const confEl = document.getElementById('conf');
+const barsEl = document.getElementById('bars');
+
+let model = null;
+let env = null;
+let running = false;
+
+function setStatus(text, isError = false) {
+  statusEl.textContent = text;
+  statusEl.classList.toggle('error', isError);
+}
+
+/* ---------------- drawing ---------------- */
+let drawing = false;
+function pos(e) {
+  const r = board.getBoundingClientRect();
+  return {
+    x: (e.clientX - r.left) * (board.width / r.width),
+    y: (e.clientY - r.top) * (board.height / r.height),
+  };
+}
+function startStroke(e) {
+  drawing = true;
+  board.setPointerCapture(e.pointerId);
+  const p = pos(e);
+  ctx.lineWidth = 22;            // ~28px stroke on the 280px board
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = '#fff';
+  ctx.beginPath();
+  ctx.moveTo(p.x, p.y);
+  ctx.lineTo(p.x + 0.1, p.y + 0.1);
+  ctx.stroke();
+}
+function moveStroke(e) {
+  if (!drawing) return;
+  const p = pos(e);
+  ctx.lineTo(p.x, p.y);
+  ctx.stroke();
+}
+function endStroke() { drawing = false; }
+board.addEventListener('pointerdown', startStroke);
+board.addEventListener('pointermove', moveStroke);
+board.addEventListener('pointerup', endStroke);
+board.addEventListener('pointercancel', endStroke);
+
+function clearBoard() {
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, board.width, board.height);
+  resultEl.hidden = true;
+}
+clearBtn.addEventListener('click', clearBoard);
+clearBoard();
+
+/* ---------------- preprocessing ---------------- */
+const off = document.createElement('canvas');
+off.width = 28; off.height = 28;
+const offCtx = off.getContext('2d', { willReadFrequently: true });
+
+function boardToTensor(inputShape) {
+  offCtx.imageSmoothingEnabled = true;
+  offCtx.imageSmoothingQuality = 'high';
+  offCtx.clearRect(0, 0, 28, 28);
+  offCtx.drawImage(board, 0, 0, 28, 28);
+  const px = offCtx.getImageData(0, 0, 28, 28).data;
+  const data = new Float32Array(784);
+  let ink = 0;
+  for (let i = 0; i < 784; i++) {
+    const v = px[i * 4] / 255;   // grayscale -> [0, 1]
+    data[i] = v;
+    ink += v;
+  }
+  return { tensor: new Tensor(data, Array.from(inputShape), env), ink };
+}
+
+function softmax(v) {
+  const m = Math.max(...v);
+  const e = v.map(x => Math.exp(x - m));
+  const s = e.reduce((a, b) => a + b, 0);
+  return e.map(x => x / s);
+}
+function toProbabilities(v) {
+  // If the model already emits probabilities (sum ~ 1), use them as-is;
+  // otherwise apply softmax (covers logits-style outputs).
+  const allIn01 = v.every(x => x >= 0 && x <= 1);
+  const sum = v.reduce((a, b) => a + b, 0);
+  return allIn01 && Math.abs(sum - 1) < 0.05 ? v : softmax(v);
+}
+
+function renderBars(probs, argmax) {
+  barsEl.innerHTML = '';
+  probs.forEach((p, i) => {
+    const row = document.createElement('div');
+    row.className = 'bar-row' + (i === argmax ? ' hit' : '');
+    const lab = document.createElement('div');
+    lab.className = 'lab'; lab.textContent = String(i);
+    const track = document.createElement('div');
+    track.className = 'bar-track';
+    const fill = document.createElement('div');
+    fill.className = 'bar-fill';
+    fill.style.width = (p * 100).toFixed(1) + '%';
+    const pct = document.createElement('div');
+    pct.className = 'pct'; pct.textContent = (p * 100).toFixed(1) + '%';
+    track.appendChild(fill);
+    row.append(lab, track, pct);
+    barsEl.appendChild(row);
+  });
+}
+
+/* ---------------- inference ---------------- */
+async function predict() {
+  if (!model || running) return;
+  running = true;
+  predictBtn.disabled = true;
+  try {
+    setStatus('Running inference…');
+    const { tensor: input, ink } = boardToTensor(model.getInputDetails()[0].shape);
+    if (ink < 3) {
+      input.delete();
+      setStatus('The canvas looks empty — draw a digit first.');
+      resultEl.hidden = true;
+      return;
+    }
+    let outputs;
+    try {
+      outputs = await model.run(input);
+    } finally {
+      input.delete();
+    }
+    let vals;
+    try {
+      vals = Array.from(outputs[0].toTypedArray());
+    } finally {
+      outputs[0].delete();
+    }
+
+    const probs = toProbabilities(vals);
+    let argmax = 0;
+    for (let i = 1; i < probs.length; i++) if (probs[i] > probs[argmax]) argmax = i;
+    const conf = probs[argmax];
+
+    digitEl.textContent = String(argmax);
+    confEl.textContent = (conf * 100).toFixed(1) + '%';
+    renderBars(probs, argmax);
+    resultEl.hidden = false;
+    setStatus('Model ready.');
+  } finally {
+    running = false;
+    predictBtn.disabled = !model;
+  }
+}
+predictBtn.addEventListener('click', () => {
+  predict().catch(e => setStatus('Prediction failed: ' + (e?.message ?? e), true));
+});
+
+/* ---------------- bootstrap ---------------- */
+async function init() {
+  try {
+    setStatus('Loading LiteRT.js Wasm runtime…');
+    await loadLiteRt(WASM_BASE);
+
+    // Explicit environment with no WebGPU device: we run on the Wasm/XNNPack
+    // path, which works without cross-origin isolation (no COOP/COEP).
+    env = await Environment.create({ webGpuDevice: null });
+
+    let lastError = null;
+    for (const url of MODEL_URLS) {
+      try {
+        setStatus('Loading model: ' + url.split('/').pop() + '…');
+        model = await loadAndCompile(url, { accelerator: 'wasm', environment: env });
+        lastError = null;
+        break;
+      } catch (e) {
+        lastError = e;
+      }
+    }
+    if (!model) throw lastError ?? new Error('Could not load any model URL.');
+
+    const inputInfo = model.getInputDetails()
+      .map(d => `${d.name} ${d.dtype} [${Array.from(d.shape)}]`)
+      .join(', ');
+    setStatus('Model ready — input: ' + inputInfo);
+    predictBtn.disabled = false;
+  } catch (e) {
+    setStatus('Failed to initialize: ' + (e?.message ?? e), true);
+    predictBtn.disabled = true;
+  }
+}
+init().catch(e => setStatus('Failed to initialize: ' + (e?.message ?? e), true));
+</script>
+</body>
+</html>
